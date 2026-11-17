@@ -75,6 +75,14 @@
       dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 18px; font-size: 15px; }
       dt { color: var(--rcs-muted); }
       dd { margin: 0; font-family: var(--rcs-mono); }
+      .warnpill { height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--rcs-warn); color: var(--rcs-warn); background: color-mix(in srgb, var(--rcs-warn) 12%, transparent);
+        font: 700 14px var(--rcs-font); cursor: pointer; white-space: nowrap; }
+      #view-setup { overflow-y: auto; min-height: 0; }
+      .frames td, .frames th { padding: 5px 8px; font-size: 14px; }
+      .frames td.mono { font-family: var(--rcs-mono); }
+      .warns { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+      .warns li { color: var(--rcs-warn); font-size: 14px; }
+      .warns li::before { content: '⚠ '; }
     </style>
   </head>
   <body>
@@ -83,6 +91,7 @@
         <h1>Event Master</h1>
         <span class="device" id="device"></span>
         <rcs-status id="status" connection="disconnected"></rcs-status>
+        <button class="warnpill" id="warn" hidden></button>
         <div class="grow"></div>
         <div class="bus pvw" id="pvwBus" hidden><span class="k">PREVIEW</span><span class="v" id="pvwName"></span></div>
         <div class="bus pgm" id="pgmBus" hidden><span class="k">PROGRAM</span><span class="v" id="pgmName"></span></div>
@@ -124,7 +133,11 @@
           <div class="seg" id="operator"></div>
           <p class="note" style="white-space: normal" id="pwNote"></p>
         </div>
-        <div class="col"><dl id="info"></dl></div>
+        <div class="col">
+          <dl id="info"></dl>
+          <ul class="warns" id="warns"></ul>
+          <table class="frames"><thead><tr><th>FRAME</th><th>MODEL</th><th>SOFTWARE</th><th>IP</th><th>POWER</th><th>CARDS</th></tr></thead><tbody id="frames"></tbody></table>
+        </div>
       </section>
     </main>
 
@@ -252,16 +265,30 @@
         );
         $('pwNote').textContent = s.passwordSet ? 'A super-operator password is set (web view Setup).' : 'Super-operator password: set it in the web view Setup if the processor asks for one.';
         const f = s.frame;
-        const power = f?.power?.length ? f.power.map((p) => `PSU ${p.supply}: ${['No supply', 'No power cable', 'No DC output', 'OK'][p.status] ?? p.status}`).join(', ') : '—';
+        const frames = f?.frames ?? [];
         const rows = [
           ['Status', s.ready ? 'Connected' : s.statusText || s.connection],
-          ['Model', f?.model ?? '—'],
-          ['Name', f?.name || '—'],
-          ['Software', f?.version || '—'],
-          ['Power', power],
-          ['Presets', s.ready ? String(s.presets.length) : '—'],
-          ['Destinations', s.ready ? `${s.dests.filter((d) => d.kind === 'screen').length} screen, ${s.dests.filter((d) => d.kind === 'aux').length} aux` : '—']
+          ['System', f ? `${f.name || '—'} · ${frames.length} frame${frames.length === 1 ? '' : 's'}` : '—'],
+          ['Show', s.ready ? `${s.presets.length} presets · ${s.dests.filter((d) => d.kind === 'screen').length} screen, ${s.dests.filter((d) => d.kind === 'aux').length} aux` : '—']
         ];
+        $('warns').replaceChildren(...(s.warnings ?? []).map((w) => el('li', {}, w)));
+        const PSU = ['none', 'no cable', 'no DC', 'OK'];
+        $('frames').replaceChildren(
+          ...frames.map((fr, i) => {
+            const tr = el('tr');
+            const bad = fr.power.filter((p) => p.status === 1 || p.status === 2).length;
+            const faults = fr.cards.filter((c) => c.fault).length;
+            tr.append(
+              el('td', { class: 'lbl' }, fr.name + (frames.length > 1 && fr.host ? ' (host)' : '')),
+              el('td', { class: 'dim' }, fr.model || '—'),
+              el('td', { class: 'mono' }, fr.version || '—'),
+              el('td', { class: 'mono' }, fr.ip || '—'),
+              el('td', { class: bad ? 'bad' : 'good' }, fr.power.length ? fr.power.map((p) => PSU[p.status] ?? p.status).join(' / ') : '—'),
+              el('td', { class: faults ? 'bad' : 'dim' }, fr.cards.length ? (faults ? `${faults} fault${faults > 1 ? 's' : ''} of ${fr.cards.length}` : `${fr.cards.length} OK`) : '—')
+            );
+            return tr;
+          })
+        );
         $('info').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
       }
 
@@ -279,7 +306,11 @@
         $('view-presets').style.display = view === 'presets' && !showOffline ? 'contents' : 'none';
         $('status').setAttribute('connection', s.connection);
         $('status').textContent = live ? 'Connected' : '';
-        $('device').textContent = live ? `${s.frame?.model ?? 'E2'} ${s.frame?.name ?? ''} · ${s.config.address}` : s.config.address;
+        const nw = live ? (s.warnings ?? []).length : 0;
+        $('warn').hidden = !nw;
+        $('warn').textContent = `⚠ ${nw} warning${nw === 1 ? '' : 's'}`;
+        const nf = s.frame?.frames?.length ?? 0;
+        $('device').textContent = live ? `${s.frame?.model ?? 'E2'} ${s.frame?.name ?? ''}${nf > 1 ? ` · ${nf} frames` : ''} · ${s.config.address}` : s.config.address;
         $('pvwBus').hidden = $('pgmBus').hidden = !live;
         $('pvwName').textContent = s.previewPreset?.name ?? '—';
         $('pgmName').textContent = s.programPreset?.name ?? '—';
@@ -305,6 +336,7 @@
         $('confirm').show();
       };
       $('toSetup').onclick = () => rcs.send({ type: 'view', view: 'setup' });
+      $('warn').onclick = () => rcs.send({ type: 'view', view: 'setup' });
       $('reconnect').onclick = () => rcs.send({ type: 'reconnect' });
       $('address').addEventListener('change', (e) => rcs.send({ type: 'config', config: { address: e.detail } }));
       $('port').addEventListener('change', (e) => rcs.send({ type: 'config', config: { port: Number(e.detail) } }));

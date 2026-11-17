@@ -11,11 +11,28 @@ and aux destination shows, layer by layer.
   (PVW), and each aux with its source. PVW DIFFERS marks a destination whose preview is not what is live.
 - **Sources**: inputs with format and signal status (OK, no sync, format mismatch…), backgrounds and other
   sources.
-- **Setup**: the processor address, Allow controls, the operator (multi-operator mode), and what the
-  processor reports about itself and its power supplies.
+- **Setup**: the processor address, Allow controls, the operator (multi-operator mode), and every frame
+  of the system with its software, address, power supplies and cards.
 
 The web view has the same pages. TAKE and CUT ask for a confirmation there; the super-operator password
 is set on its Setup page.
+
+## Multi-frame systems
+
+An Event Master system can link up to four frames under one host. Point the module at the host frame: the
+JSON-RPC API answers there for the whole system, so presets, sources and destinations already span every
+frame. Setup lists each frame the host reports (`getFrameSettings`) with its model, software, IP, power
+supplies (`powerStatus`, per frame) and cards, and marks the host. The module warns, in the header and
+on every web page, when:
+
+- a frame it has seen since starting is no longer in the system,
+- the frames run different software,
+- a power supply has no power cable or no DC output,
+- a card's status reads as a fault (failed, error, mismatch and the like).
+
+The manual shows a single frame as an object under `FrameCollection.Frame`; with several frames the
+module reads an array there (or an array of collections). That shape has only been tried against the
+simulator.
 
 ## Stream Deck
 
@@ -83,7 +100,9 @@ Set the address to `127.0.0.1` in the module's Setup and turn on Allow controls.
 like a busy show with, for example, `curl 'http://127.0.0.1:9999/sim/recall?preset=3'` (another operator
 recalls a preset), `curl 'http://127.0.0.1:9999/sim/source?id=2&video=4'` (an input loses sync) or
 `curl 'http://127.0.0.1:9999/sim/silent?on=1'` (the processor stops answering). `npm run sim -- --password pw`
-requires a super-operator password; `RCS_E2_POLL_MS` polls faster during development.
+requires a super-operator password; `npm run sim -- --frames 3` simulates three linked frames, and
+`curl 'http://127.0.0.1:9999/sim/frame?n=2&present=0'` drops frame 2 out of the system (see the top of
+`src/sim/e2.ts` for power supply, card and software faults). `RCS_E2_POLL_MS` polls faster during development.
 
 ## Releasing
 

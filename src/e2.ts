@@ -122,12 +122,40 @@ export interface AuxDest {
 
 export type Dest = ScreenDest | AuxDest;
 
-export interface FrameInfo {
+export interface Card {
+  /** "Sys" for the system card, else the slot number from 1. */
+  slot: string;
+  type: string;
+  status: string;
+  /** True when the processor's status label says something is wrong. */
+  fault: boolean;
+}
+
+/** One frame of an Event Master system. A multi-frame system links up to four frames under one host. */
+export interface Frame {
+  /** The frame's id: its MAC address. */
+  id: string;
   name: string;
   model: string;
   version: string;
+  osVersion: string;
   ip: string;
-  /** Per supply, 'OK' or what is wrong, from powerStatus; empty when unknown. */
+  cards: Card[];
+  /** powerStatus for this frame; empty when unknown. */
+  power: { supply: number; status: number }[];
+  /** The frame this module talks to (its address), else the first frame listed. */
+  host: boolean;
+}
+
+export interface FrameInfo {
+  /** The system's name. */
+  name: string;
+  /** The host frame's model, software and address (the frame this module talks to, else the first). */
+  model: string;
+  version: string;
+  ip: string;
+  frames: Frame[];
+  /** Kept for older UIs: every supply of every frame. */
   power: { frame: string; supply: number; status: number }[];
 }
 
@@ -209,18 +237,81 @@ export function applyAuxContent(d: AuxDest, r: any): void {
   d.read = true;
 }
 
-export function parseFrame(r: any): Omit<FrameInfo, 'power'> {
-  const sys = r?.System ?? r ?? {};
-  let frame = sys?.FrameCollection?.Frame;
-  if (Array.isArray(frame)) frame = frame[0];
-  frame = frame ?? {};
-  const type = num(frame.FrameType);
+const FAULT_RE = /fail|fault|error|invalid|mismatch|missing|not ok|bad/i;
+
+function parseCard(c: any, slot: string): Card | null {
+  const card = c?.Card ?? c;
+  if (!card || typeof card !== 'object') return null;
+  const type = str(card.CardTypeLabel);
+  const status = str(card.CardStatusLabel);
+  if (!type && !status) return null;
+  if (/^empty$/i.test(type) || /^empty$/i.test(status)) return null;
+  return { slot, type: type || `Type ${num(card.CardTypeID)}`, status: status || `Status ${num(card.CardStatusID)}`, fault: FAULT_RE.test(status) };
+}
+
+function parseOneFrame(f: any, i: number): Frame {
+  const type = num(f?.FrameType);
+  const cards: Card[] = [];
+  const sys = parseCard(f?.SysCard, 'Sys');
+  if (sys) cards.push(sys);
+  arr(f?.Slot).forEach((s, j) => {
+    const c = parseCard(s, String(num(s?.id, j) + 1));
+    if (c) cards.push(c);
+  });
   return {
-    name: str(sys.Name) || str(frame.Name),
-    model: str(frame.FrameTypeName) || FRAME_TYPE[type] || 'Event Master',
-    version: str(frame.Version),
-    ip: str(frame.Enet?.IP)
+    id: str(f?.id) || `frame-${i + 1}`,
+    name: str(f?.Name) || `Frame ${i + 1}`,
+    model: str(f?.FrameTypeName) || FRAME_TYPE[type] || 'Event Master',
+    version: str(f?.Version),
+    osVersion: str(f?.OSVersion),
+    ip: str(f?.Enet?.IP),
+    cards,
+    power: [],
+    host: false
   };
+}
+
+/**
+ * getFrameSettings: the system and every frame in it. The manual shows one frame as an object under
+ * FrameCollection.Frame; a multi-frame system lists several, so an array (of the collection or of
+ * Frame) is read too.
+ */
+export function parseFrames(r: any, power: FrameInfo['power'] = [], host = ''): FrameInfo {
+  const sys = r?.System ?? r ?? {};
+  const raw: any[] = [];
+  for (const coll of Array.isArray(sys?.FrameCollection) ? sys.FrameCollection : [sys?.FrameCollection]) {
+    const f = coll?.Frame;
+    if (Array.isArray(f)) raw.push(...f);
+    else if (f && typeof f === 'object') raw.push(f);
+  }
+  const frames = raw.map(parseOneFrame);
+  for (const f of frames) f.power = power.filter((p) => p.frame.toLowerCase() === f.id.toLowerCase()).map(({ supply, status }) => ({ supply, status }));
+  const pick = (id: string) => power.filter((p) => p.frame === id).map(({ supply, status }) => ({ supply, status }));
+  const unmatched = [...new Set(power.map((p) => p.frame))].filter((id) => !frames.some((f) => f.id.toLowerCase() === id.toLowerCase()));
+  if (frames.length === 1 && !frames[0]!.power.length && unmatched.length === 1) frames[0]!.power = pick(unmatched[0]!);
+  else for (const id of unmatched) frames.push({ id, name: id, model: '', version: '', osVersion: '', ip: '', cards: [], power: pick(id), host: false });
+  const main = frames.find((f) => host && f.ip === host) ?? frames[0];
+  if (main) main.host = true;
+  return { name: str(sys.Name) || main?.name || '', model: main?.model || 'Event Master', version: main?.version ?? '', ip: main?.ip ?? '', frames, power };
+}
+
+/** Kept for callers of the single-frame reader. */
+export function parseFrame(r: any): Omit<FrameInfo, 'power' | 'frames'> {
+  const { name, model, version, ip } = parseFrames(r);
+  return { name, model, version, ip };
+}
+
+/** Things worth a look across the frames of a system. */
+export function frameWarnings(info: FrameInfo, lost: string[] = []): string[] {
+  const out: string[] = [];
+  for (const name of lost) out.push(`${name} is no longer in the system`);
+  const versions = new Set(info.frames.map((f) => f.version).filter(Boolean));
+  if (versions.size > 1) out.push(`Frames run different software: ${info.frames.filter((f) => f.version).map((f) => `${f.name} ${f.version}`).join(', ')}`);
+  for (const f of info.frames) {
+    for (const p of f.power) if (p.status === 1 || p.status === 2) out.push(`${f.name}: power supply ${p.supply} ${p.status === 1 ? 'has no power cable' : 'has no DC output'}`);
+    for (const c of f.cards) if (c.fault) out.push(`${f.name}: ${c.slot === 'Sys' ? 'system card' : `slot ${c.slot}`} ${c.type}: ${c.status}`);
+  }
+  return out;
 }
 
 export function parsePower(r: any): FrameInfo['power'] {

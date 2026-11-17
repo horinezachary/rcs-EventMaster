@@ -67,6 +67,13 @@
       dt { color: var(--rcs-muted); }
       dd { margin: 0; font-family: var(--rcs-mono); overflow-wrap: anywhere; }
       h2 { margin: 0; font-size: 17px; }
+      .warnbox { border: 1px solid var(--rcs-warn); background: color-mix(in srgb, var(--rcs-warn) 10%, transparent); border-radius: 12px; padding: 10px 16px; margin-bottom: 16px; }
+      .warnbox ul { margin: 0; padding-left: 20px; color: var(--rcs-warn); font-size: 15px; line-height: 1.6; }
+      .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 16px; }
+      .frame .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .frame .nm { font: 700 18px var(--rcs-font); }
+      .frame .tag { font: 700 11px var(--rcs-font); letter-spacing: 0.08em; color: var(--rcs-accent); }
+      .frame table td { padding: 5px 8px; font-size: 14px; }
     </style>
   </head>
   <body>
@@ -78,6 +85,7 @@
     </header>
 
     <div id="offline" class="card" style="margin-bottom: 16px" hidden><p id="offlineText"></p></div>
+    <div id="warnbox" class="warnbox" hidden><ul id="warnList"></ul></div>
 
     <div class="buses" id="buses" style="margin-bottom: 16px" hidden>
       <div class="bus pvw"><div class="k">PREVIEW</div><div class="v" id="pvwName"></div></div>
@@ -122,10 +130,13 @@
           <p>Sent with recalls, takes and cuts when set. Kept in named saves (sealed with a passphrase in a download), never shown again.</p>
         </div>
         <div class="card">
-          <h2>Processor info</h2>
+          <h2>System</h2>
           <dl id="info"></dl>
         </div>
       </div>
+      <h2 id="framesTitle">Frames</h2>
+      <p id="framesNote"></p>
+      <div class="frames" id="frames"></div>
     </section>
 
     <rcs-dialog id="confirm">
@@ -253,18 +264,53 @@
         $('pwState').textContent = s.passwordSet ? 'A password is set.' : 'No password set.';
         $('clearPw').hidden = !s.passwordSet;
         const f = s.frame;
-        const power = f?.power?.length ? f.power.map((p) => `PSU ${p.supply} ${['no supply', 'no power cable', 'no DC output', 'OK'][p.status] ?? p.status}`).join(', ') : '—';
+        const frames = f?.frames ?? [];
         const info = [
           ['Status', s.ready ? 'Connected' : s.statusText || s.connection],
-          ['Model', f?.model ?? '—'],
           ['Name', f?.name || '—'],
-          ['Software', f?.version || '—'],
-          ['IP (reported)', f?.ip || '—'],
-          ['Power', power],
+          ['Frames', f ? String(frames.length) : '—'],
+          ['Host', f ? `${f.model} · ${f.version || '—'}` : '—'],
           ['Presets', s.ready ? String(s.presets.length) : '—'],
           ['Sources', s.ready ? String(s.sources.length) : '—'],
           ['Destinations', s.ready ? `${s.dests.filter((d) => d.kind === 'screen').length} screen, ${s.dests.filter((d) => d.kind === 'aux').length} aux` : '—']
         ];
+        $('framesTitle').textContent = frames.length > 1 ? `Frames (${frames.length} linked)` : 'Frame';
+        $('framesNote').textContent = frames.length > 1
+          ? 'Every frame of the system, as the host reports them. The module talks to the host only; presets and destinations span all frames.'
+          : 'A multi-frame system lists every linked frame here.';
+        const PSU = ['no supply', 'no power cable', 'no DC output', 'OK'];
+        $('frames').replaceChildren(
+          ...frames.map((fr) => {
+            const box = el('div', { class: 'card frame' });
+            const top = el('div', { class: 'top' });
+            top.append(el('span', { class: 'nm' }, fr.name), el('span', { class: 'dim' }, fr.model || ''));
+            if (frames.length > 1 && fr.host) top.append(el('span', { class: 'tag' }, 'HOST'));
+            const dl = el('dl');
+            const rows = [
+              ['Software', fr.version || '—'],
+              ['OS', fr.osVersion || '—'],
+              ['IP', fr.ip || '—'],
+              ['MAC', fr.id],
+              ['Power', fr.power.length ? fr.power.map((p) => `PSU ${p.supply} ${PSU[p.status] ?? p.status}`).join(', ') : '—']
+            ];
+            dl.append(...rows.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
+            box.append(top, dl);
+            if (fr.cards.length) {
+              const t = el('table');
+              const tb = el('tbody');
+              tb.append(
+                ...fr.cards.map((c) => {
+                  const tr = el('tr');
+                  tr.append(el('td', { class: 'mono' }, c.slot === 'Sys' ? 'Sys' : `Slot ${c.slot}`), el('td', {}, c.type), el('td', { class: c.fault ? 'bad' : 'good' }, c.status));
+                  return tr;
+                })
+              );
+              t.append(tb);
+              box.append(t);
+            }
+            return box;
+          })
+        );
         $('info').replaceChildren(...info.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
       }
 
@@ -273,7 +319,11 @@
         for (const id of PAGES) $('page-' + id).hidden = id !== page;
         $('status').setAttribute('connection', s.connection);
         $('status').textContent = s.ready ? 'Connected' : '';
-        $('device').textContent = s.ready ? `${s.frame?.model ?? 'Event Master'} ${s.frame?.name ?? ''} · ${s.config.address}` : s.config.address;
+        const nf = s.frame?.frames?.length ?? 0;
+        $('device').textContent = s.ready ? `${s.frame?.model ?? 'Event Master'} ${s.frame?.name ?? ''}${nf > 1 ? ` · ${nf} frames` : ''} · ${s.config.address}` : s.config.address;
+        const warns = s.ready ? s.warnings ?? [] : [];
+        $('warnbox').hidden = !warns.length;
+        $('warnList').replaceChildren(...warns.map((w) => el('li', {}, w)));
         const showOffline = !s.ready && page !== 'setup';
         $('offline').hidden = !showOffline;
         $('offlineText').textContent = s.config.address ? s.statusText || 'Connecting…' : 'No processor set. Add its address on the Setup page.';
