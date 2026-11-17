@@ -164,6 +164,7 @@ export function snapshot(ctx: C) {
     ready: ready(),
     busy: !!p?.busy,
     frame: p?.frame ?? null,
+    warnings: p?.warnings ?? [],
     presets: p?.presets ?? [],
     sources: (p?.sources ?? []).map((s) => ({ ...s, status: s.video === null ? '' : (VIDEO_STATUS[s.video] ?? `Status ${s.video}`) })),
     dests: dests.map((d) => ({
@@ -188,7 +189,19 @@ export function snapshot(ctx: C) {
   };
 }
 
+/** The controller refuses a whole keys.setMany over these limits, so every face is cut to fit. */
+export const LABEL_MAX = 10;
+export const SUBLABEL_MAX = 12;
+
+function fit(f: KeySetParams): KeySetParams {
+  return { ...f, ...(f.label !== undefined ? { label: short(f.label, LABEL_MAX) } : {}), ...(f.sublabel !== undefined ? { sublabel: short(f.sublabel, SUBLABEL_MAX) } : {}) };
+}
+
 function keyFaces(ctx: C): KeySetParams[] {
+  return rawKeyFaces(ctx).map(fit);
+}
+
+function rawKeyFaces(ctx: C): KeySetParams[] {
   const p = proc();
   const live = ready() && !!p;
   const c = cfg(ctx);
@@ -210,7 +223,7 @@ function keyFaces(ctx: C): KeySetParams[] {
     faces.push({
       index: k,
       label: short(preset.name, 10),
-      sublabel: onPgm && onPvw ? 'PGM · PVW' : onPgm ? 'PROGRAM' : onPvw ? 'PREVIEW' : c.allowControls ? `PRESET ${num}` : `${num} · locked`,
+      sublabel: onPgm && onPvw ? 'PGM · PVW' : onPgm ? 'PROGRAM' : onPvw ? 'PREVIEW' : `PRESET ${num}`,
       ...(onPgm ? { background: PGM_BG } : onPvw ? { background: PVW_BG } : {})
     });
   }
@@ -234,8 +247,10 @@ function keyFaces(ctx: C): KeySetParams[] {
 }
 
 export async function draw(ctx: C, clientId?: string): Promise<void> {
-  if (!clientId) await ctx.keys.setMany(keyFaces(ctx));
+  // The screens are drawn even if the keys are refused.
+  const keys = clientId ? Promise.resolve() : ctx.keys.setMany(keyFaces(ctx));
   await ctx.ui.send(snapshot(ctx), clientId);
+  await keys;
 }
 
 // ---- operator actions: the only things that send commands -----------------------------------------

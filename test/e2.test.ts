@@ -1,6 +1,6 @@
 // The JSON-RPC client and parsers against the simulator and against the manual's shapes.
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyContent, parseDestinations, parseFrame, parsePower, parsePresets, rpc, type ScreenDest } from '../src/e2.js';
+import { applyContent, frameWarnings, parseDestinations, parseFrame, parseFrames, parsePower, parsePresets, rpc, type ScreenDest } from '../src/e2.js';
 import { Processor } from '../src/processor.js';
 import { SimE2 } from '../src/sim/e2.js';
 
@@ -54,6 +54,68 @@ describe('parsers', () => {
     expect(parsePresets([{ id: 4, Name: 'B', presetSno: 2.01 }, { id: 1, Name: 'A', presetSno: 1, LockMode: 1 }]).map((p) => [p.name, p.locked])).toEqual([['A', true], ['B', false]]);
     expect(parseFrame({ System: { Name: 'Main', FrameCollection: { Frame: { FrameType: 5, Version: '9.2' } } } })).toMatchObject({ name: 'Main', model: 'E2 Gen 2', version: '9.2' });
     expect(parsePower({ 'aa:bb': { PwrStatus1: 3, PwrStatus2: 1 } })).toEqual([{ frame: 'aa:bb', supply: 1, status: 3 }, { frame: 'aa:bb', supply: 2, status: 1 }]);
+  });
+});
+
+describe('multi-frame systems', () => {
+  const frame = (n: number, extra: object = {}) => ({
+    id: `00:0b:ab:00:00:0${n}`,
+    Name: `FRAME ${n}`,
+    Version: '9.2.0.12',
+    FrameType: 0,
+    Enet: { IP: `10.0.0.${n}` },
+    SysCard: { CardStatusLabel: 'OK', CardTypeLabel: 'System' },
+    Slot: [{ id: 0, Card: { CardStatusLabel: 'OK', CardTypeLabel: 'Input SDI' } }, { id: 1, Card: { CardStatusLabel: 'Empty', CardTypeLabel: 'Empty' } }],
+    ...extra
+  });
+
+  it('reads every frame from an array, with cards, power and the host', () => {
+    const power = parsePower({ '00:0b:ab:00:00:01': { PwrStatus1: 3, PwrStatus2: 3 }, '00:0B:AB:00:00:02': { PwrStatus1: 1, PwrStatus2: 3 } });
+    const info = parseFrames({ System: { Name: 'Show', FrameCollection: { Frame: [frame(1), frame(2, { Version: '9.1.0.4' })] } } }, power, '10.0.0.2');
+    expect(info.frames.map((f) => [f.name, f.host, f.power.map((p) => p.status)])).toEqual([
+      ['FRAME 1', false, [3, 3]],
+      ['FRAME 2', true, [1, 3]]
+    ]);
+    expect(info.frames[0]!.cards.map((c) => `${c.slot} ${c.type}`)).toEqual(['Sys System', '1 Input SDI']);
+    expect(info.version).toBe('9.1.0.4');
+    expect(frameWarnings(info)).toEqual([
+      'Frames run different software: FRAME 1 9.2.0.12, FRAME 2 9.1.0.4',
+      'FRAME 2: power supply 1 has no power cable'
+    ]);
+  });
+
+  it('reads a collection given as an array, and flags a failed card and a lost frame', () => {
+    const info = parseFrames({ System: { FrameCollection: [{ Frame: frame(1) }, { Frame: frame(2, { Slot: [{ id: 2, Card: { CardStatusLabel: 'Failed', CardTypeLabel: 'Output HDMI' } }] }) }] } });
+    expect(info.frames.length).toBe(2);
+    expect(info.frames[0]!.host).toBe(true);
+    expect(frameWarnings(info, ['FRAME 3'])).toEqual(['FRAME 3 is no longer in the system', 'FRAME 2: slot 3 Output HDMI: Failed']);
+  });
+
+  it('gives a single frame the power supplies even when the ids differ', () => {
+    const info = parseFrames({ System: { FrameCollection: { Frame: frame(1) } } }, parsePower({ other: { PwrStatus1: 3 } }));
+    expect(info.frames.length).toBe(1);
+    expect(info.frames[0]!.power).toEqual([{ supply: 1, status: 3 }]);
+  });
+
+  it('notices a frame dropping out of the system and coming back', async () => {
+    e2 = new SimE2();
+    e2.setFrames(3);
+    const port = await e2.listen(0);
+    proc = new Processor('127.0.0.1', port, { pollMs: 30, slowEvery: 1 });
+    proc.start();
+    await until(() => proc!.ready);
+    expect(proc.frame!.frames.map((f) => [f.name, f.host])).toEqual([['FRAME 1', true], ['FRAME 2', false], ['FRAME 3', false]]);
+    expect(proc.warnings).toEqual([]);
+    expect(proc.statusText).toMatch(/3 frames$/);
+    e2.frames[2]!.present = false;
+    e2.frames[1]!.psu[0] = 2;
+    await until(() => proc!.warnings.length === 2);
+    expect(proc.warnings).toEqual(['FRAME 3 is no longer in the system', 'FRAME 2: power supply 1 has no DC output']);
+    expect(proc.statusText).toMatch(/2 warnings$/);
+    e2.frames[2]!.present = true;
+    e2.frames[1]!.psu[0] = 3;
+    await until(() => proc!.warnings.length === 0);
+    expect(e2.commands).toEqual([]);
   });
 });
 

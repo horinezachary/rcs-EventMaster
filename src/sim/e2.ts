@@ -10,6 +10,11 @@
 //   /sim/source?id=<n>&video=4          change an input's video status (4 = no sync, 1 = OK)
 //   /sim/silent?on=1                    stop answering (a cable pulled)
 //   /sim/password?set=<pw>              require this super-operator password for show changes
+//   /sim/frames?n=3                     a system of 3 linked frames (the first is the host)
+//   /sim/frame?n=2&present=0            frame 2 drops out of the system (present=1 brings it back)
+//   /sim/frame?n=2&psu=1&status=1       frame 2's power supply 1 loses its cable (3 = OK)
+//   /sim/frame?n=2&slot=3&card=Failed   frame 2's card in slot 3 reports Failed
+//   /sim/frame?n=2&version=9.1.0.4      frame 2 runs other software
 
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -28,6 +33,36 @@ interface SimScreen {
   bgPvw: number;
   transTime: number;
 }
+interface SimFrame {
+  id: string;
+  name: string;
+  ip: string;
+  version: string;
+  psu: [number, number];
+  /** Slot cards: type and status label. */
+  cards: { type: string; status: string }[];
+  present: boolean;
+}
+
+function makeFrame(i: number): SimFrame {
+  return {
+    id: `00:0b:ab:00:00:0${i + 1}`,
+    name: `FRAME ${i + 1}`,
+    ip: `127.0.0.${i + 1}`,
+    version: '9.2.0.12',
+    psu: [3, 3],
+    cards: [
+      { type: 'Input 4K DP/HDMI', status: 'OK' },
+      { type: 'Input 4K DP/HDMI', status: 'OK' },
+      { type: 'Input SDI', status: 'OK' },
+      { type: 'Output HDMI', status: 'OK' },
+      { type: 'Output HDMI', status: 'OK' },
+      { type: 'MVR', status: 'OK' }
+    ],
+    present: true
+  };
+}
+
 interface SimAux {
   id: number;
   name: string;
@@ -58,6 +93,8 @@ export class SimE2 {
   /** Answer without the {success, response} wrapper, as some examples in the manual show. */
   bare = false;
   name = 'MAIN';
+  /** The linked frames of the system; the first is the host. setFrames(n) builds a multi-frame system. */
+  frames: SimFrame[] = [makeFrame(0)];
   sources = INPUTS.map((name, id) => ({ id, name, video: 1, frozen: false }));
   stills = [{ id: 0, name: 'LOGO' }, { id: 1, name: 'WALK-IN' }];
   screens: SimScreen[] = [
@@ -99,6 +136,11 @@ export class SimE2 {
     ];
     this.presets[2]!.sno = 3.01;
     this.presets[12]!.locked = true;
+  }
+
+  /** A system of n linked frames, the first the host. */
+  setFrames(n: number): void {
+    this.frames = Array.from({ length: Math.max(1, Math.min(4, n)) }, (_, i) => makeFrame(i));
   }
 
   async listen(port = 0, host = '127.0.0.1'): Promise<number> {
@@ -188,6 +230,23 @@ export class SimE2 {
     if (this.password && p.password !== this.password) this.refuse(-25);
   }
 
+  private frameList(): object[] {
+    return this.frames
+      .filter((f) => f.present)
+      .map((f) => ({
+        id: f.id,
+        Name: f.name,
+        Contact: '',
+        Version: f.version,
+        OSVersion: '4.19',
+        FrameType: 0,
+        FrameTypeName: 'E2',
+        Enet: { DhcpMode: 0, IP: f.ip, StaticIP: f.ip, MacAddress: f.id },
+        SysCard: { SlotState: 1, CardStatusID: 1, CardStatusLabel: 'OK', CardTypeID: 1, CardTypeLabel: 'System', CardID: 0 },
+        Slot: f.cards.map((c, i) => ({ id: i, Card: { CardStatusID: c.status === 'OK' ? 1 : 2, CardStatusLabel: c.status, CardTypeID: 2, CardTypeLabel: c.type, CardID: i } }))
+      }));
+  }
+
   private method(m: string, p: any): unknown {
     switch (m) {
       case 'getFrameSettings':
@@ -196,12 +255,13 @@ export class SimE2 {
             id: 0,
             Name: this.name,
             Simulator: 1,
-            FrameCollection: { id: 0, Frame: { id: '00:0b:ab:00:00:01', Name: 'FRAME 1', Version: '9.2.0.12', FrameType: 0, FrameTypeName: 'E2', Enet: { IP: '127.0.0.1' } } },
+            // One frame as an object, as in the manual; several as an array.
+            FrameCollection: { id: 0, Frame: this.frameList().length === 1 ? this.frameList()[0] : this.frameList() },
             AutoTake: 0
           }
         };
       case 'powerStatus':
-        return { '00:0b:ab:00:00:01': { PwrStatus1: 3, PwrStatus2: 3 } };
+        return Object.fromEntries(this.frames.filter((f) => f.present).map((f) => [f.id, { PwrStatus1: f.psu[0], PwrStatus2: f.psu[1] }]));
       case 'listSources':
         return [
           ...this.sources.map((s, i) => ({ id: s.id, Name: s.name, HSize: 1920, VSize: 1080, SrcType: 0, InputCfgIndex: i, StillIndex: -1, DestIndex: -1, UserKeyIndex: -1, Freeze: s.frozen ? 1 : 0, Capacity: 1, InputCfgVideoStatus: s.video })),
@@ -276,6 +336,18 @@ export class SimE2 {
       case '/sim/silent':
         this.silent = q('on') === '1';
         break;
+      case '/sim/frames':
+        this.setFrames(Number(q('n') ?? 1));
+        break;
+      case '/sim/frame': {
+        const f = this.frames[Number(q('n') ?? 1) - 1];
+        if (!f) break;
+        if (q('present') !== null) f.present = q('present') === '1';
+        if (q('psu') !== null) f.psu[Number(q('psu')) - 1] = Number(q('status') ?? 3);
+        if (q('slot') !== null && f.cards[Number(q('slot')) - 1]) f.cards[Number(q('slot')) - 1]!.status = q('card') ?? 'OK';
+        if (q('version') !== null) f.version = q('version')!;
+        break;
+      }
       case '/sim/password':
         this.password = q('set') ?? '';
         break;

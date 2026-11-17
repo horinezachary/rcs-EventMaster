@@ -2,7 +2,7 @@
 // read; commands only on an operator action with Allow controls on; keys; logins as secrets.
 import { startTestModule, type TestModule } from '@rcs/module-sdk/testing';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import mod, { KEY, type Config, type State } from '../src/index.js';
+import mod, { KEY, LABEL_MAX, SUBLABEL_MAX, type Config, type State } from '../src/index.js';
 import { SimE2 } from '../src/sim/e2.js';
 
 let sim: TestModule<State, Config> | null = null;
@@ -90,6 +90,13 @@ describe('module', () => {
 
   it('sends nothing with Allow controls off', async () => {
     await start({ config: { allowControls: false } });
+    // Preset 3.01 once made a 13-character sublabel, which the controller refuses for all keys.
+    const faces = sim!.keys.filter((k) => k);
+    expect(faces.length).toBeGreaterThan(10);
+    for (const k of faces) {
+      expect([...(k!.label ?? '')].length).toBeLessThanOrEqual(LABEL_MAX);
+      expect([...(k!.sublabel ?? '')].length).toBeLessThanOrEqual(SUBLABEL_MAX);
+    }
     await sim!.press(1);
     await sim!.press(KEY.TAKE);
     await sim!.sendUi({ type: 'recall', id: 2 });
@@ -126,6 +133,16 @@ describe('module', () => {
     expect(sim!.config.operatorId).toBe(2);
     await sim!.sendUi({ type: 'reconnect' });
     await until(() => last()?.ready);
+    expect(e2!.commands).toEqual([]);
+  });
+
+  it('sends each frame of a multi-frame system and its warnings to the UIs', async () => {
+    await start();
+    e2!.setFrames(2);
+    e2!.frames[1]!.cards[2]!.status = 'Failed';
+    await until(() => last()?.frame?.frames?.length === 2, 8000);
+    expect(last().frame.frames.map((f: any) => f.name)).toEqual(['FRAME 1', 'FRAME 2']);
+    expect(last().warnings).toEqual(['FRAME 2: slot 3 Input SDI: Failed']);
     expect(e2!.commands).toEqual([]);
   });
 

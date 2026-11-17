@@ -1,7 +1,7 @@
 // Reads one Event Master processor and sends the operator's commands to it.
 //
 // Reading: what every destination shows on program and preview, once a second; the presets, sources,
-// destination list, frame and power supplies every few seconds. Everything read is kept in memory.
+// destination list, and every frame of the system with its cards and power supplies every few seconds. Everything read is kept in memory.
 //
 // The API cannot say which preset is on preview or program, so the module remembers the presets it
 // recalled and took itself. That marker holds while the destinations' content stays as the recall
@@ -14,7 +14,8 @@ import {
   applyContent,
   E2Error,
   parseDestinations,
-  parseFrame,
+  frameWarnings,
+  parseFrames,
   parsePower,
   parsePresets,
   parseSources,
@@ -61,6 +62,10 @@ export class Processor extends EventEmitter {
   connection: Connection = 'connecting';
   statusText = 'Connecting…';
   frame: FrameInfo | null = null;
+  /** Problems across the frames of the system: lost frames, mixed software, power, cards. */
+  warnings: string[] = [];
+  /** Every frame seen since the module started, so one that drops out of the system is noticed. */
+  private seenFrames = new Map<string, string>();
   sources: Source[] = [];
   presets: Preset[] = [];
   screens: ScreenDest[] = [];
@@ -146,7 +151,10 @@ export class Processor extends EventEmitter {
       this.failures = 0;
       this.ready = true;
       this.track();
-      this.setStatus('connected', `${this.frame?.model ?? 'Event Master'} ${this.frame?.name ?? ''}`.trim());
+      const n = this.frame?.frames.length ?? 0;
+      const base = `${this.frame?.model ?? 'Event Master'} ${this.frame?.name ?? ''}`.trim() + (n > 1 ? ` · ${n} frames` : '');
+      const w = this.warnings.length;
+      this.setStatus('connected', w ? `${base} · ${w} warning${w > 1 ? 's' : ''}` : base);
     } catch (e) {
       if (this.stopped) return;
       this.failures++;
@@ -170,7 +178,10 @@ export class Processor extends EventEmitter {
       this.call('listDestinations', { type: 0 })
     ]);
     const power = await this.call('powerStatus').then(parsePower, () => []);
-    this.frame = { ...parseFrame(frame), power };
+    this.frame = parseFrames(frame, power, this.host);
+    for (const f of this.frame.frames) this.seenFrames.set(f.id, f.name);
+    const lost = [...this.seenFrames].filter(([id]) => !this.frame!.frames.some((f) => f.id === id)).map(([, name]) => name);
+    this.warnings = frameWarnings(this.frame, lost);
     this.sources = parseSources(sources);
     this.presets = parsePresets(presets);
     const { screens, auxes } = parseDestinations(dests);
