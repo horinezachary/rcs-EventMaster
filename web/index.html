@@ -48,6 +48,17 @@
       .preset.pgm .tag { color: var(--pgm); }
       .preset:disabled { cursor: default; }
 
+      .screens { display: flex; flex-direction: column; gap: 16px; }
+      .screen .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .screen .nm { font: 700 19px var(--rcs-font); }
+      .screen .sz { font: 13px var(--rcs-mono); color: var(--rcs-muted); }
+      .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; }
+      .bus-canvas { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+      .bus-canvas .k { font: 800 12px var(--rcs-font); letter-spacing: 0.1em; }
+      .bus-canvas.pvw .k { color: var(--pvw); } .bus-canvas.pgm .k { color: var(--pgm); }
+      .bus-canvas svg.canvas { width: 100%; height: auto; display: block; border-radius: 6px; }
+      svg.canvas .edge { stroke: var(--rcs-border); } .bus-canvas.pvw svg.canvas .edge { stroke: var(--pvw); } .bus-canvas.pgm svg.canvas .edge { stroke: var(--pgm); }
+      .legend { font-size: 14px; color: var(--rcs-muted); }
       .dests { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 16px; }
       .dest .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
       .dest .nm { font: 700 19px var(--rcs-font); }
@@ -96,6 +107,11 @@
     <section id="page-presets">
       <p id="presetNote"></p>
       <div class="presets" id="presets"></div>
+    </section>
+
+    <section id="page-screens" hidden>
+      <p>Each screen destination to scale: every layer's source where it sits on the canvas, preview and program, with the outputs as dashed lines. Read once a second.</p>
+      <div class="screens" id="screens"></div>
     </section>
 
     <section id="page-outputs" hidden>
@@ -147,9 +163,11 @@
       </div>
     </rcs-dialog>
 
+    <script src="canvas.js"></script>
     <script type="module">
+      const { drawCanvas } = window.E2Canvas;
       const $ = (id) => document.getElementById(id);
-      const PAGES = ['presets', 'outputs', 'sources', 'setup'];
+      const PAGES = ['presets', 'screens', 'outputs', 'sources', 'setup'];
       let page = 'presets';
       let s = null;
       let onYes = null;
@@ -210,6 +228,31 @@
           );
           return tr;
         });
+      }
+
+      function drawScreens() {
+        const screens = s.dests.filter((d) => d.kind === 'screen');
+        if (!screens.length) {
+          $('screens').replaceChildren(el('p', {}, 'The processor reports no screen destinations.'));
+          return;
+        }
+        $('screens').replaceChildren(
+          ...screens.map((d) => {
+            const box = el('div', { class: 'card screen' });
+            const top = el('div', { class: 'top' });
+            const outs = d.outputs?.length ? ` · ${d.outputs.length} output${d.outputs.length === 1 ? '' : 's'}` : '';
+            top.append(el('span', { class: 'nm' }, d.name), el('span', { class: 'sz' }, d.size + outs));
+            if (d.programText !== d.previewText) top.append(el('span', { class: 'diff' }, 'PREVIEW DIFFERS'));
+            const pair = el('div', { class: 'pair' });
+            for (const [which, k, cls] of [['preview', 'PREVIEW', 'pvw'], ['program', 'PROGRAM', 'pgm']]) {
+              const c = el('div', { class: `bus-canvas ${cls}` });
+              c.append(el('span', { class: 'k' }, k), drawCanvas(d, which));
+              pair.append(c);
+            }
+            box.append(top, pair);
+            return box;
+          })
+        );
       }
 
       function drawOutputs() {
@@ -336,6 +379,7 @@
           return;
         }
         if (page === 'presets') drawPresets();
+        if (page === 'screens') drawScreens();
         if (page === 'outputs') drawOutputs();
         if (page === 'sources') drawSources();
         if (page === 'setup') drawSetup();

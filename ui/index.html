@@ -42,6 +42,19 @@
       .preset.pgm .tag { color: var(--pgm); }
       .preset:disabled { cursor: default; }
 
+      #view-screens { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+      .stabs { display: flex; gap: 8px; flex-wrap: nowrap; overflow: hidden; }
+      .stabs button { height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--rcs-border); background: var(--rcs-surface); color: var(--rcs-text);
+        font: 600 15px var(--rcs-font); cursor: pointer; white-space: nowrap; }
+      .stabs button[aria-pressed=true] { border-color: var(--rcs-accent); color: var(--rcs-accent); }
+      .stabs .sz { font: 13px var(--rcs-mono); color: var(--rcs-muted); margin-left: 8px; }
+      .pair { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .bus-canvas { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+      .bus-canvas .k { font: 800 12px var(--rcs-font); letter-spacing: 0.1em; }
+      .bus-canvas.pvw .k { color: var(--pvw); } .bus-canvas.pgm .k { color: var(--pgm); }
+      .bus-canvas .frame { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+      .bus-canvas svg.canvas { max-width: 100%; max-height: 100%; width: 100%; height: 100%; border-radius: 6px; }
+      svg.canvas .edge { stroke: var(--rcs-border); } .bus-canvas.pvw svg.canvas .edge { stroke: var(--pvw); } .bus-canvas.pgm svg.canvas .edge { stroke: var(--pgm); }
       .dests { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
       .dest { border: 1px solid var(--rcs-border); border-radius: 14px; background: var(--rcs-surface); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
       .dest .top { display: flex; align-items: baseline; gap: 10px; }
@@ -109,6 +122,14 @@
         <div class="presets" id="presets"></div>
       </section>
 
+      <section id="view-screens" hidden>
+        <div class="stabs" id="stabs"></div>
+        <div class="pair">
+          <div class="bus-canvas pvw"><span class="k">PREVIEW</span><div class="frame" id="cvPvw"></div></div>
+          <div class="bus-canvas pgm"><span class="k">PROGRAM</span><div class="frame" id="cvPgm"></div></div>
+        </div>
+      </section>
+
       <section id="view-outputs" class="scroll" hidden>
         <div class="dests" id="dests"></div>
       </section>
@@ -149,7 +170,9 @@
       </div>
     </rcs-dialog>
 
+    <script src="canvas.js"></script>
     <script type="module">
+      const { drawCanvas } = window.E2Canvas;
       const $ = (id) => document.getElementById(id);
       const PER = 20;
       let s = null;
@@ -215,6 +238,24 @@
           c.append(document.createTextNode(l.name + (l.frozen ? ' ❄' : '')));
           return c;
         });
+      }
+
+      // Which screen the Screens page shows: this panel's own choice, not saved.
+      let screenId = null;
+      function drawScreens() {
+        const screens = s.dests.filter((d) => d.kind === 'screen');
+        if (!screens.some((d) => d.id === screenId)) screenId = screens[0]?.id ?? null;
+        $('stabs').replaceChildren(
+          ...screens.map((d) => {
+            const b = el('button', { 'aria-pressed': String(d.id === screenId) }, d.name);
+            b.append(el('span', { class: 'sz' }, d.size));
+            b.onclick = () => ((screenId = d.id), drawScreens());
+            return b;
+          })
+        );
+        const d = screens.find((x) => x.id === screenId);
+        $('cvPvw').replaceChildren(...(d ? [drawCanvas(d, 'preview')] : [el('p', { class: 'note' }, 'The processor reports no screen destinations.')]));
+        $('cvPgm').replaceChildren(...(d ? [drawCanvas(d, 'program')] : []));
       }
 
       function drawOutputs() {
@@ -302,7 +343,7 @@
           $('offlineText').textContent = s.config.address ? s.statusText || 'Connecting…' : 'No processor set. Type its IP address in Setup.';
           $('toSetup').hidden = !!s.config.address;
         }
-        for (const v of ['presets', 'outputs', 'sources', 'setup']) $('view-' + v).hidden = view !== v || (showOffline && v !== 'setup');
+        for (const v of ['presets', 'screens', 'outputs', 'sources', 'setup']) $('view-' + v).hidden = view !== v || (showOffline && v !== 'setup');
         $('view-presets').style.display = view === 'presets' && !showOffline ? 'contents' : 'none';
         $('status').setAttribute('connection', s.connection);
         $('status').textContent = live ? 'Connected' : '';
@@ -325,6 +366,7 @@
         lastPvw = pvw;
         if (!live && view !== 'setup') return;
         if (view === 'presets') drawPresets();
+        if (view === 'screens') drawScreens();
         if (view === 'outputs') drawOutputs();
         if (view === 'sources') drawSources();
         if (view === 'setup') drawSetup();

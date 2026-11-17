@@ -1,6 +1,6 @@
 // The JSON-RPC client and parsers against the simulator and against the manual's shapes.
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyContent, frameWarnings, parseDestinations, parseFrame, parseFrames, parsePower, parsePresets, rpc, type ScreenDest } from '../src/e2.js';
+import { applyContent, frameWarnings, parseDestinations, parseFrame, parseFrames, parseOutputMap, parsePower, parsePresets, rpc, type ScreenDest } from '../src/e2.js';
 import { Processor } from '../src/processor.js';
 import { SimE2 } from '../src/sim/e2.js';
 
@@ -48,6 +48,26 @@ describe('parsers', () => {
     expect(s.program.map((l) => [l.layer, l.source])).toEqual([[null, 12], ['Layer2-A', 7], ['Layer1-A', 3]]);
     expect(s.preview.map((l) => [l.layer, l.source])).toEqual([['Layer1-B', 5], ['Layer2-A', 7]]);
     expect(s.transitionFrames).toBe(30);
+  });
+
+  it('reads the output map and each layer\'s window on program and preview', () => {
+    const d = parseDestinations({
+      ScreenDestination: [{ id: 0, Name: 'Wall', HSize: 3840, VSize: 1080, DestOutMapColl: [{ id: 0, DestOutMap: [
+        { id: 0, Name: 'L', HPos: 0, VPos: 0, HSize: 1920, VSize: 1080 },
+        { id: 1, Name: 'R', HPos: 1920, VPos: 0, HSize: 1920, VSize: 1080 }
+      ] }] }]
+    });
+    const s = d.screens[0] as ScreenDest;
+    expect(s.outputs).toEqual([{ x: 0, y: 0, w: 1920, h: 1080, name: 'L' }, { x: 1920, y: 0, w: 1920, h: 1080, name: 'R' }]);
+    expect(parseOutputMap({ DestOutMap: { HSize: 100, VSize: 50 } })).toEqual([{ x: 0, y: 0, w: 100, h: 50, name: 'Output 1' }]);
+    applyContent(s, {
+      Layers: [
+        { id: 0, Name: 'Layer1-A', LastSrcIdx: 3, PgmMode: 1, PvwMode: 1, Window: [{ id: 0, HPos: 10, VPos: 20, HSize: 300, VSize: 200 }, { id: 1, HPos: 0, VPos: 0, HSize: 3840, VSize: 1080 }] },
+        { id: 1, Name: 'Layer2-A', LastSrcIdx: 5, PgmMode: 1, PvwMode: 0, Window: { HPos: 0, VPos: 0, HSize: 0, VSize: 0 } }
+      ]
+    });
+    expect(s.program.map((l) => l.window)).toEqual([{ x: 10, y: 20, w: 300, h: 200 }, null]);
+    expect(s.preview[0]!.window).toEqual({ x: 0, y: 0, w: 3840, h: 1080 });
   });
 
   it('sorts presets by preset number and reads frame and power', () => {

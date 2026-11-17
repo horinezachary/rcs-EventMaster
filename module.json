@@ -13,6 +13,7 @@
     "ui": "web",
     "pages": [
       { "id": "presets", "label": "Presets" },
+      { "id": "screens", "label": "Screens" },
       { "id": "outputs", "label": "Outputs" },
       { "id": "sources", "label": "Sources" },
       { "id": "setup", "label": "Setup" }

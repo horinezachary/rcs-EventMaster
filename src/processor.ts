@@ -188,7 +188,7 @@ export class Processor extends EventEmitter {
     // Keep what was read of a destination's content until it is read again.
     this.screens = screens.map((d) => {
       const old = this.screens.find((x) => x.id === d.id);
-      return old ? { ...old, name: d.name, width: d.width, height: d.height } : d;
+      return old ? { ...old, name: d.name, width: d.width, height: d.height, outputs: d.outputs } : d;
     });
     this.auxes = auxes.map((d) => this.auxes.find((x) => x.id === d.id) ?? d);
     for (const t of [this.pvw, this.pgm]) {
