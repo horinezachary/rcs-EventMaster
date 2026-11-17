@@ -69,6 +69,10 @@ describe('module', () => {
     const wall = last().dests.find((d: any) => d.name === 'LED WALL');
     expect(wall.program.find((l: any) => l.layer === null).name).toBe('LOGO');
     expect(last().dests.find((d: any) => d.name === 'CONF MON').programText).toBe('GFX 2');
+    // the Screens view gets each screen's canvas, output map and every layer's window
+    expect(wall).toMatchObject({ width: 3840, height: 1080 });
+    expect(wall.outputs.map((o: any) => o.name)).toEqual(['WALL L', 'WALL R']);
+    for (const l of [...wall.program, ...wall.preview].filter((l: any) => l.layer !== null)) expect(l.window?.w).toBeGreaterThan(0);
   });
 
   it('cuts only on a hold', async () => {

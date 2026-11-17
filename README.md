@@ -9,6 +9,10 @@ and aux destination shows, layer by layer.
   program. TAKE and CUT in the header.
 - **Outputs**: each screen destination with its layers and background on program (PGM) and preview
   (PVW), and each aux with its source. PVW DIFFERS marks a destination whose preview is not what is live.
+- **Screens**: each screen destination drawn to scale, preview beside program. The background fills the
+  canvas and every layer's source sits where its window is, bottom layer first, so upper layers cover lower
+  ones. Dashed lines show how the canvas is cut into the processor's outputs. A source keeps the same
+  colour on every screen.
 - **Sources**: inputs with format and signal status (OK, no sync, format mismatch…), backgrounds and other
   sources.
 - **Setup**: the processor address, Allow controls, the operator (multi-operator mode), and every frame
@@ -79,7 +83,8 @@ With an operator chosen in Setup the commands carry `operatorId`; with a super-o
 
 Not in the API, so not in the module: video thumbnails of the inputs, outputs or multiviewer, and which
 preset is active (see above). Caveats: the background on a screen is named from the background sources
-(`listSources` SrcType 1), which the manual does not spell out; **commands have only been tried against
+(`listSources` SrcType 1), which the manual does not spell out; a layer's `Window` comes as two entries,
+and like `BGLyr` the Screens view takes id 0 as program and id 1 as preview, also not in the manual; **commands have only been tried against
 the simulator.** Ask before pointing a development build with Allow controls on at a show processor.
 
 ## Develop

@@ -19,9 +19,17 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+interface Win {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 interface SimLayer {
   pgm: number;
   pvw: number;
+  pgmWin?: Win;
+  pvwWin?: Win;
 }
 interface SimScreen {
   id: number;
@@ -32,6 +40,10 @@ interface SimScreen {
   bgPgm: number;
   bgPvw: number;
   transTime: number;
+  /** Output map: how the canvas is cut into the processor's outputs. */
+  outputs?: (Win & { name: string })[];
+  /** Where each layer sits when a preset gives no window. */
+  defaultWins?: Win[];
 }
 interface SimFrame {
   id: string;
@@ -75,7 +87,7 @@ interface SimPreset {
   sno: number;
   locked: boolean;
   /** per screen id: layer sources (-1 = layer off) and background */
-  screens: Record<number, { layers: number[]; bg: number }>;
+  screens: Record<number, { layers: number[]; bg: number; wins?: Win[] }>;
   auxes: Record<number, number>;
 }
 
@@ -98,7 +110,25 @@ export class SimE2 {
   sources = INPUTS.map((name, id) => ({ id, name, video: 1, frozen: false }));
   stills = [{ id: 0, name: 'LOGO' }, { id: 1, name: 'WALK-IN' }];
   screens: SimScreen[] = [
-    { id: 0, name: 'LED WALL', w: 3840, h: 1080, layers: [{ pgm: 6, pvw: 6 }, { pgm: 0, pvw: 0 }, { pgm: -1, pvw: -1 }], bgPgm: 0, bgPvw: 0, transTime: 30 },
+    {
+      id: 0,
+      name: 'LED WALL',
+      w: 3840,
+      h: 1080,
+      layers: [{ pgm: 6, pvw: 6 }, { pgm: 0, pvw: 0 }, { pgm: -1, pvw: -1 }],
+      bgPgm: 0,
+      bgPvw: 0,
+      transTime: 30,
+      outputs: [
+        { name: 'WALL L', x: 0, y: 0, w: 1920, h: 1080 },
+        { name: 'WALL R', x: 1920, y: 0, w: 1920, h: 1080 }
+      ],
+      defaultWins: [
+        { x: 0, y: 0, w: 3840, h: 1080 },
+        { x: 1200, y: 120, w: 1440, h: 810 },
+        { x: 2640, y: 200, w: 1080, h: 608 }
+      ]
+    },
     { id: 1, name: 'IMAG L', w: 1920, h: 1080, layers: [{ pgm: 0, pvw: 0 }, { pgm: -1, pvw: -1 }], bgPgm: -1, bgPvw: -1, transTime: 20 },
     { id: 2, name: 'IMAG R', w: 1920, h: 1080, layers: [{ pgm: 1, pvw: 1 }, { pgm: -1, pvw: -1 }], bgPgm: -1, bgPvw: -1, transTime: 20 }
   ];
@@ -135,6 +165,17 @@ export class SimE2 {
       P(12, 'BARS', [11, -1, -1], 11, 11, [11, 11, 11])
     ];
     this.presets[2]!.sno = 3.01;
+    // Two speakers side by side over graphics on the wall.
+    const sideBySide = [
+      { x: 0, y: 0, w: 3840, h: 1080 },
+      { x: 160, y: 90, w: 1680, h: 945 },
+      { x: 2000, y: 90, w: 1680, h: 945 }
+    ];
+    this.presets[3]!.screens[0]!.wins = sideBySide;
+    this.presets[7]!.screens[0]!.wins = sideBySide;
+    // Remote guest: Zoom large, camera in a corner box.
+    this.presets[6]!.screens[0]!.wins = [{ x: 0, y: 0, w: 3840, h: 1080 }, { x: 2720, y: 600, w: 800, h: 450 }, { x: 0, y: 0, w: 0, h: 0 }];
+    for (const s of this.screens) for (const [i, l] of s.layers.entries()) l.pgmWin = l.pvwWin = this.win(s, i);
     this.presets[12]!.locked = true;
   }
 
@@ -161,6 +202,16 @@ export class SimE2 {
     return this.calls.filter((c) => ['activatePreset', 'allTrans', 'cut', 'changeContent', 'changeAuxContent', 'savePreset', 'deletePreset', 'freezeDestSource'].includes(c.method));
   }
 
+  /** Where layer i of a screen sits when nothing says otherwise. */
+  win(s: SimScreen, i: number, preset?: Win[]): Win {
+    const p = preset?.[i];
+    if (p && p.w > 0) return { ...p };
+    if (s.defaultWins?.[i]) return { ...s.defaultWins[i]! };
+    if (i === 0) return { x: 0, y: 0, w: s.w, h: s.h };
+    // a lower-right box for upper layers of a plain screen
+    return { x: Math.round(s.w * 0.62), y: Math.round(s.h * 0.62), w: Math.round(s.w * 0.33), h: Math.round(s.h * 0.33) };
+  }
+
   /** Another operator (or the E2's own console) recalls a preset. */
   recall(id: number, type: 0 | 1): void {
     const p = this.presets.find((x) => x.id === id);
@@ -168,7 +219,10 @@ export class SimE2 {
     for (const s of this.screens) {
       const c = p.screens[s.id];
       if (!c) continue;
-      s.layers.forEach((l, i) => (l.pvw = c.layers[i] ?? -1));
+      s.layers.forEach((l, i) => {
+        l.pvw = c.layers[i] ?? -1;
+        l.pvwWin = this.win(s, i, c.wins);
+      });
       s.bgPvw = c.bg;
       if (type === 1) this.cutScreen(s);
     }
@@ -186,7 +240,10 @@ export class SimE2 {
   }
 
   private cutScreen(s: SimScreen): void {
-    for (const l of s.layers) l.pgm = l.pvw;
+    for (const l of s.layers) {
+      l.pgm = l.pvw;
+      l.pgmWin = l.pvwWin;
+    }
     s.bgPgm = s.bgPvw;
   }
 
@@ -272,7 +329,8 @@ export class SimE2 {
       case 'listDestinations': {
         const t = Number(p.type ?? 0);
         return {
-          ScreenDestination: t === 2 ? [] : this.screens.map((s) => ({ id: s.id, Name: s.name, HSize: s.w, VSize: s.h, Layers: s.layers.length * 2, DestOutMapColl: [] })),
+          ScreenDestination: t === 2 ? [] : this.screens.map((s) => ({ id: s.id, Name: s.name, HSize: s.w, VSize: s.h, Layers: s.layers.length * 2,
+            DestOutMapColl: [{ id: 0, DestOutMap: (s.outputs ?? [{ name: s.name, x: 0, y: 0, w: s.w, h: s.h }]).map((o, i) => ({ id: i, Name: o.name, HPos: o.x, VPos: o.y, HSize: o.w, VSize: o.h, Freeze: 0 })) }] })),
           AuxDestination: t === 1 ? [] : this.auxes.map((a) => ({ id: a.id, Name: a.name, AuxStreamMode: 0 }))
         };
       }
@@ -280,10 +338,15 @@ export class SimE2 {
         const s = this.screens.find((x) => x.id === Number(p.id));
         if (!s) this.refuse(-1);
         const layers: any[] = [];
+        // Window, Source and Mask hold two entries: id 0 for program and id 1 for preview (as BGLyr).
+        const W = (id: number, w?: Win) => ({ id, HPos: w?.x ?? 0, VPos: w?.y ?? 0, HSize: w?.w ?? 0, VSize: w?.h ?? 0 });
+        const M = (id: number) => ({ id, Top: 0, Left: 0, Right: 0, Bottom: 0 });
         s.layers.forEach((l, i) => {
-          const same = l.pgm === l.pvw;
-          const a = { id: i * 2, Name: `Layer${i + 1}-A`, LastSrcIdx: l.pgm, PgmMode: l.pgm >= 0 ? 1 : 0, PvwMode: same && l.pvw >= 0 ? 1 : 0, PgmZOrder: i, PvwZOrder: i, Freeze: 0 };
-          const b = { id: i * 2 + 1, Name: `Layer${i + 1}-B`, LastSrcIdx: same ? -1 : l.pvw, PgmMode: 0, PvwMode: !same && l.pvw >= 0 ? 1 : 0, PgmZOrder: i, PvwZOrder: i, Freeze: 0 };
+          const same = l.pgm === l.pvw && JSON.stringify(l.pgmWin) === JSON.stringify(l.pvwWin);
+          const a = { id: i * 2, Name: `Layer${i + 1}-A`, LastSrcIdx: l.pgm, PgmMode: l.pgm >= 0 ? 1 : 0, PvwMode: same && l.pvw >= 0 ? 1 : 0, PgmZOrder: i, PvwZOrder: i, Freeze: 0,
+            Window: [W(0, l.pgmWin), W(1, same ? l.pvwWin : l.pgmWin)], Mask: [M(0), M(1)] };
+          const b = { id: i * 2 + 1, Name: `Layer${i + 1}-B`, LastSrcIdx: same ? -1 : l.pvw, PgmMode: 0, PvwMode: !same && l.pvw >= 0 ? 1 : 0, PgmZOrder: i, PvwZOrder: i, Freeze: 0,
+            Window: [W(0, l.pvwWin), W(1, l.pvwWin)], Mask: [M(0), M(1)] };
           layers.push(a, b);
         });
         return {

@@ -96,6 +96,15 @@ export interface LayerUse {
   layer: string | null;
   source: number;
   frozen: boolean;
+  /** Where the layer sits on the destination's canvas, in canvas pixels; null when not reported. */
+  window?: Rect | null;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export interface ScreenDest {
@@ -108,6 +117,8 @@ export interface ScreenDest {
   program: LayerUse[];
   preview: LayerUse[];
   transitionFrames: number | null;
+  /** The destination's output map: where each of its outputs sits on the canvas. */
+  outputs: (Rect & { name: string })[];
   read: boolean;
 }
 
@@ -200,10 +211,39 @@ export function parseDestinations(r: any): { screens: ScreenDest[]; auxes: AuxDe
     program: [],
     preview: [],
     transitionFrames: null,
+    outputs: parseOutputMap(d.DestOutMapColl),
     read: false
   }));
   const auxes: AuxDest[] = arr(r?.AuxDestination).map((d) => ({ kind: 'aux', id: num(d.id), name: str(d.Name, `Aux ${num(d.id) + 1}`), program: [], preview: [], read: false }));
   return { screens: screens.filter((d) => d.id >= 0), auxes: auxes.filter((d) => d.id >= 0) };
+}
+
+function rect(v: any): Rect | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = { x: num(v.HPos, 0), y: num(v.VPos, 0), w: num(v.HSize, 0), h: num(v.VSize, 0) };
+  return r.w > 0 && r.h > 0 ? r : null;
+}
+
+/** DestOutMapColl: [{id, DestOutMap: [{id, Name, HPos, VPos, HSize, VSize}]}] (or the map on its own). */
+export function parseOutputMap(v: unknown): ScreenDest['outputs'] {
+  const maps = (Array.isArray(v) ? v : v && typeof v === 'object' ? [v] : []).flatMap((c) => (Array.isArray(c?.DestOutMap) ? c.DestOutMap : c?.DestOutMap ? [c.DestOutMap] : [c]));
+  return maps
+    .map((m, i) => {
+      const r = rect(m);
+      return r ? { ...r, name: str(m.Name, `Output ${i + 1}`) } : null;
+    })
+    .filter((m): m is Rect & { name: string } => m !== null);
+}
+
+/**
+ * A layer's window on program or preview. listContent gives Window as two entries; like BGLyr, id 0
+ * is taken as program and id 1 as preview (the manual does not say). A single object serves both.
+ */
+function layerWindow(l: any, which: 'program' | 'preview'): Rect | null {
+  const w = l?.Window;
+  if (!Array.isArray(w)) return rect(w);
+  const id = which === 'program' ? 0 : 1;
+  return rect(w.find((x) => num(x?.id) === id) ?? w[id] ?? w[0]);
 }
 
 /** listContent for one screen destination: which sources its layers show on program and preview. */
@@ -214,7 +254,12 @@ export function applyContent(d: ScreenDest, r: any): void {
     layers
       .filter((l) => num(l[mode], 0) === 1 && num(l.LastSrcIdx) >= 0)
       .sort((a, b) => num(a[z], 0) - num(b[z], 0) || num(a.id) - num(b.id))
-      .map((l) => ({ layer: str(l.Name, `Layer ${num(l.id) + 1}`), source: num(l.LastSrcIdx), frozen: num(l.Freeze, 0) === 1 }));
+      .map((l) => ({
+        layer: str(l.Name, `Layer ${num(l.id) + 1}`),
+        source: num(l.LastSrcIdx),
+        frozen: num(l.Freeze, 0) === 1,
+        window: layerWindow(l, mode === 'PgmMode' ? 'program' : 'preview')
+      }));
   // BGLyr id 0 is the background on program, id 1 on preview.
   const bg = (id: number): LayerUse[] => {
     const b = arr(r?.BGLyr).find((x) => num(x.id) === id);

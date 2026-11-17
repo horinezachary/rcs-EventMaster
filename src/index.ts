@@ -31,8 +31,8 @@ export interface Config {
 }
 
 type C = Ctx<State, Config>;
-export type View = 'presets' | 'outputs' | 'sources' | 'setup';
-const VIEWS: View[] = ['presets', 'outputs', 'sources', 'setup'];
+export type View = 'presets' | 'screens' | 'outputs' | 'sources' | 'setup';
+const VIEWS: View[] = ['presets', 'screens', 'outputs', 'sources', 'setup'];
 
 export const KEY = { PAGE: 10, PVW: 11, PGM: 12, CUT: 13, TAKE: 14 } as const;
 export const PER_PAGE = 10;
@@ -173,9 +173,12 @@ export function snapshot(ctx: C) {
       name: d.name,
       size: d.kind === 'screen' && d.width ? `${d.width}×${d.height}` : '',
       transitionFrames: d.kind === 'screen' ? d.transitionFrames : null,
+      width: d.kind === 'screen' ? d.width : 0,
+      height: d.kind === 'screen' ? d.height : 0,
+      outputs: d.kind === 'screen' ? d.outputs : [],
       read: d.read,
-      program: d.program.map((l) => ({ layer: l.layer, source: l.source, name: useName(d, l), frozen: l.frozen })),
-      preview: d.preview.map((l) => ({ layer: l.layer, source: l.source, name: useName(d, l), frozen: l.frozen })),
+      program: d.program.map((l) => ({ layer: l.layer, source: l.source, name: useName(d, l), frozen: l.frozen, window: l.window ?? null })),
+      preview: d.preview.map((l) => ({ layer: l.layer, source: l.source, name: useName(d, l), frozen: l.frozen, window: l.window ?? null })),
       programText: shows(d, 'program'),
       previewText: shows(d, 'preview')
     })),
@@ -350,6 +353,7 @@ export default defineModule<State, Config>({
     await ctx.state.init({ presetPage: 0 });
     await ctx.strip.set([
       { id: 'presets', label: 'Presets', icon: 'assets/presets.svg' },
+      { id: 'screens', label: 'Screens', icon: 'assets/screens.svg' },
       { id: 'outputs', label: 'Outputs', icon: 'assets/outputs.svg' },
       { id: 'sources', label: 'Sources', icon: 'assets/sources.svg' },
       { id: 'setup', label: 'Setup', icon: 'assets/setup.svg' }
