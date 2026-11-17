@@ -1,0 +1,322 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { --pvw: #1E9E4A; --pgm: #D7332D; }
+      html, body { height: 100%; overflow: hidden; }
+      main { height: 100%; display: flex; flex-direction: column; padding: 16px 32px 18px; gap: 12px; box-sizing: border-box; }
+      header { display: flex; align-items: center; gap: 14px; min-height: 52px; }
+      h1 { margin: 0; font-size: 26px; font-weight: 700; white-space: nowrap; }
+      .device { font: 15px var(--rcs-mono); color: var(--rcs-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .grow { flex: 1; }
+      .bus { display: flex; flex-direction: column; justify-content: center; min-width: 170px; max-width: 260px; height: 52px; padding: 0 14px; border-radius: 12px;
+        border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); box-sizing: border-box; }
+      .bus .k { font: 700 11px var(--rcs-font); letter-spacing: 0.1em; color: var(--c); }
+      .bus .v { font: 700 18px var(--rcs-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .bus.pvw { --c: var(--pvw); } .bus.pgm { --c: var(--pgm); }
+      .act { height: 52px; min-width: 120px; border-radius: 12px; border: 1px solid var(--rcs-border); font: 800 20px var(--rcs-font); letter-spacing: 0.06em; cursor: pointer;
+        background: var(--rcs-surface); color: var(--rcs-text); }
+      .act.take { background: var(--rcs-accent); color: #16181C; border-color: transparent; }
+      .act:disabled { opacity: 0.35; cursor: default; }
+      .cap { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; color: var(--rcs-muted); }
+      .bar { display: flex; align-items: center; gap: 12px; min-height: 28px; }
+      .pager { display: flex; align-items: center; gap: 10px; font: 13px var(--rcs-mono); color: var(--rcs-muted); }
+      .pager button { min-width: 64px; height: 36px; border-radius: 10px; border: 1px solid var(--rcs-border); background: var(--rcs-surface);
+        color: var(--rcs-text); font: 600 16px var(--rcs-font); cursor: pointer; }
+      .pager button:disabled { opacity: 0.35; }
+      .note { margin: 0; color: var(--rcs-muted); font-size: 14px; }
+      .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+      .empty p { margin: 0; color: var(--rcs-muted); font-size: 17px; max-width: 760px; line-height: 1.5; }
+      .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
+      .presets { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .preset { border-radius: 12px; border: 1px solid var(--rcs-border); background: var(--rcs-surface); color: var(--rcs-text); cursor: pointer; padding: 10px 12px;
+        display: flex; flex-direction: column; justify-content: space-between; text-align: left; font: inherit; min-width: 0; }
+      .preset .n { font: 13px var(--rcs-mono); color: var(--rcs-muted); display: flex; gap: 6px; }
+      .preset .t { font: 700 18px var(--rcs-font); line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+      .preset .tag { font: 800 11px var(--rcs-font); letter-spacing: 0.1em; min-height: 14px; }
+      .preset.pvw { border: 2px solid var(--pvw); background: color-mix(in srgb, var(--pvw) 22%, var(--rcs-surface)); }
+      .preset.pvw .tag { color: var(--pvw); }
+      .preset.pgm { border: 2px solid var(--pgm); background: color-mix(in srgb, var(--pgm) 26%, var(--rcs-surface)); }
+      .preset.pgm .tag { color: var(--pgm); }
+      .preset:disabled { cursor: default; }
+
+      .dests { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+      .dest { border: 1px solid var(--rcs-border); border-radius: 14px; background: var(--rcs-surface); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+      .dest .top { display: flex; align-items: baseline; gap: 10px; }
+      .dest .nm { font: 700 19px var(--rcs-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dest .sz { font: 13px var(--rcs-mono); color: var(--rcs-muted); white-space: nowrap; }
+      .line { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; }
+      .line .b { font: 800 12px var(--rcs-font); letter-spacing: 0.08em; }
+      .line.pgm .b { color: var(--pgm); } .line.pvw .b { color: var(--pvw); }
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+      .chip { font: 600 15px var(--rcs-font); padding: 3px 9px; border-radius: 7px; background: var(--rcs-bg); border: 1px solid var(--rcs-border); white-space: nowrap; }
+      .line.pgm .chip { border-color: color-mix(in srgb, var(--pgm) 60%, transparent); }
+      .line.pvw .chip { border-color: color-mix(in srgb, var(--pvw) 60%, transparent); }
+      .chip .l { font: 12px var(--rcs-mono); color: var(--rcs-muted); margin-right: 6px; }
+      .chip.none { color: var(--rcs-muted); }
+      .diff { font: 700 11px var(--rcs-font); letter-spacing: 0.08em; color: var(--pvw); }
+
+      table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      td, th { padding: 7px 8px; border-bottom: 1px solid var(--rcs-border); white-space: nowrap; text-align: left; }
+      th { font-size: 12px; color: var(--rcs-muted); letter-spacing: 0.06em; }
+      td.num { font-family: var(--rcs-mono); color: var(--rcs-muted); width: 3em; }
+      td.lbl { font-weight: 600; }
+      .good { color: var(--rcs-ok); } .bad { color: var(--rcs-error); } .dim { color: var(--rcs-muted); }
+      .two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+
+      .setup { flex: 1; display: grid; grid-template-columns: 340px 300px 1fr; gap: 32px; align-items: start; }
+      .setup .col { display: flex; flex-direction: column; gap: 14px; }
+      .toggle { display: flex; align-items: center; gap: 14px; font-size: 17px; }
+      .seg { display: flex; gap: 6px; }
+      .seg button { flex: 1; height: 44px; border-radius: 10px; border: 1px solid var(--rcs-border); background: var(--rcs-surface); color: var(--rcs-text); font: 600 15px var(--rcs-font); cursor: pointer; }
+      .seg button[aria-pressed=true] { border-color: var(--rcs-accent); color: var(--rcs-accent); }
+      dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 18px; font-size: 15px; }
+      dt { color: var(--rcs-muted); }
+      dd { margin: 0; font-family: var(--rcs-mono); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Event Master</h1>
+        <span class="device" id="device"></span>
+        <rcs-status id="status" connection="disconnected"></rcs-status>
+        <div class="grow"></div>
+        <div class="bus pvw" id="pvwBus" hidden><span class="k">PREVIEW</span><span class="v" id="pvwName"></span></div>
+        <div class="bus pgm" id="pgmBus" hidden><span class="k">PROGRAM</span><span class="v" id="pgmName"></span></div>
+        <button class="act" id="cut" hidden>CUT</button>
+        <button class="act take" id="take" hidden>TAKE</button>
+      </header>
+
+      <div class="empty" id="offline" hidden>
+        <p id="offlineText"></p>
+        <rcs-button id="toSetup" variant="primary">Open Setup</rcs-button>
+      </div>
+
+      <section id="view-presets" style="display: contents">
+        <div class="bar"><span class="cap">PRESETS</span><span class="note" id="presetNote"></span><div class="grow"></div><div class="pager" id="pager"></div></div>
+        <div class="presets" id="presets"></div>
+      </section>
+
+      <section id="view-outputs" class="scroll" hidden>
+        <div class="dests" id="dests"></div>
+      </section>
+
+      <section id="view-sources" class="scroll" hidden>
+        <div class="two">
+          <table><thead><tr><th>#</th><th>INPUT</th><th>FORMAT</th><th>SIGNAL</th></tr></thead><tbody id="inputs"></tbody></table>
+          <table><thead><tr><th>#</th><th>OTHER SOURCES</th><th>TYPE</th><th></th></tr></thead><tbody id="others"></tbody></table>
+        </div>
+      </section>
+
+      <section id="view-setup" class="setup" hidden>
+        <div class="col">
+          <rcs-field id="address" label="Processor address" kind="ip" placeholder="192.168.0.175"></rcs-field>
+          <rcs-field id="port" label="Port" kind="number"></rcs-field>
+          <rcs-button id="reconnect" size="small">Reconnect</rcs-button>
+        </div>
+        <div class="col">
+          <label class="toggle"><rcs-toggle id="allow" label="Allow controls"></rcs-toggle>Allow controls</label>
+          <p class="note" style="white-space: normal">Off: the module only reads. On: preset keys recall to preview, TAKE transitions and CUT (hold) cuts.</p>
+          <span class="cap">OPERATOR</span>
+          <div class="seg" id="operator"></div>
+          <p class="note" style="white-space: normal" id="pwNote"></p>
+        </div>
+        <div class="col"><dl id="info"></dl></div>
+      </section>
+    </main>
+
+    <rcs-dialog id="confirm">
+      <span id="confirmText"></span>
+      <div slot="buttons">
+        <rcs-button id="no">Cancel</rcs-button>
+        <rcs-button id="yes" variant="danger">CUT</rcs-button>
+      </div>
+    </rcs-dialog>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const PER = 20;
+      let s = null;
+      let page = 0;
+      let lastPvw = null;
+
+      function el(tag, attrs = {}, text) {
+        const e = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) {
+          if (v === true) e.setAttribute(k, '');
+          else if (v !== false && v != null) e.setAttribute(k, String(v));
+        }
+        if (text != null) e.textContent = text;
+        return e;
+      }
+      const sno = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+
+      $('no').onclick = () => $('confirm').close();
+      $('yes').onclick = () => {
+        $('confirm').close();
+        rcs.send({ type: 'cut' });
+      };
+
+      function drawPresets() {
+        const list = s.presets;
+        const pages = Math.max(1, Math.ceil(list.length / PER));
+        page = Math.min(page, pages - 1);
+        const pvw = s.previewPreset?.preset ?? null;
+        const pgm = s.programPreset?.preset ?? null;
+        $('presetNote').textContent = s.config.allowControls ? 'Tap to recall to preview, then TAKE.' : 'Controls are off: turn on Allow controls in Setup to recall.';
+        const tiles = list.slice(page * PER, (page + 1) * PER).map((p) => {
+          const cls = p.id === pgm ? 'preset pgm' : p.id === pvw ? 'preset pvw' : 'preset';
+          const b = el('button', { class: cls, disabled: !s.config.allowControls || s.busy });
+          const n = el('span', { class: 'n' }, sno(p.number));
+          if (p.locked) n.append(el('span', {}, '🔒'));
+          b.append(n, el('span', { class: 't' }, p.name), el('span', { class: 'tag' }, p.id === pgm && p.id === pvw ? 'PGM · PVW' : p.id === pgm ? 'PROGRAM' : p.id === pvw ? 'PREVIEW' : ''));
+          b.onclick = () => rcs.send({ type: 'recall', id: p.id });
+          return b;
+        });
+        if (!list.length) tiles.push(el('p', { class: 'note' }, 'The processor has no presets.'));
+        $('presets').replaceChildren(...tiles);
+        const box = $('pager');
+        box.replaceChildren();
+        if (pages > 1) {
+          const prev = el('button', { 'aria-label': 'Previous page' }, '◀');
+          const next = el('button', { 'aria-label': 'Next page' }, '▶');
+          prev.disabled = page === 0;
+          next.disabled = page >= pages - 1;
+          prev.onclick = () => ((page -= 1), drawPresets());
+          next.onclick = () => ((page += 1), drawPresets());
+          box.append(prev, el('span', {}, `${page * PER + 1}–${Math.min(list.length, (page + 1) * PER)} of ${list.length}`), next);
+        }
+      }
+
+      function chips(list, aux) {
+        if (!list.length) return [el('span', { class: 'chip none' }, 'nothing')];
+        // Top layer first, background last.
+        const layers = list.filter((l) => l.layer !== null).reverse();
+        const bg = list.filter((l) => l.layer === null);
+        return [...layers, ...bg].map((l) => {
+          const c = el('span', { class: 'chip' });
+          if (!aux) c.append(el('span', { class: 'l' }, l.layer === null ? 'BG' : l.layer.replace(/^Layer\s*(\d+).*$/i, 'L$1')));
+          c.append(document.createTextNode(l.name + (l.frozen ? ' ❄' : '')));
+          return c;
+        });
+      }
+
+      function drawOutputs() {
+        $('dests').replaceChildren(
+          ...s.dests.map((d) => {
+            const box = el('div', { class: 'dest' });
+            const top = el('div', { class: 'top' });
+            top.append(el('span', { class: 'nm' }, d.name), el('span', { class: 'sz' }, d.kind === 'aux' ? 'AUX' : d.size));
+            if (d.programText !== d.previewText) top.append(el('span', { class: 'grow' }), el('span', { class: 'diff' }, 'PVW DIFFERS'));
+            const pg = el('div', { class: 'line pgm' });
+            const pgc = el('div', { class: 'chips' });
+            pgc.append(...chips(d.program, d.kind === 'aux'));
+            pg.append(el('span', { class: 'b' }, 'PGM'), pgc);
+            const pv = el('div', { class: 'line pvw' });
+            const pvc = el('div', { class: 'chips' });
+            pvc.append(...chips(d.preview, d.kind === 'aux'));
+            pv.append(el('span', { class: 'b' }, 'PVW'), pvc);
+            box.append(top, pg, pv);
+            return box;
+          })
+        );
+        if (!s.dests.length) $('dests').replaceChildren(el('p', { class: 'note' }, 'The processor reports no destinations.'));
+      }
+
+      function drawSources() {
+        const row = (cells) => {
+          const tr = el('tr');
+          for (const [text, cls] of cells) tr.append(el('td', cls ? { class: cls } : {}, text));
+          return tr;
+        };
+        const inputs = s.sources.filter((x) => x.type === 0);
+        const others = s.sources.filter((x) => x.type !== 0);
+        $('inputs').replaceChildren(...inputs.map((x) => row([[x.id + 1, 'num'], [x.name, 'lbl'], [x.width ? `${x.width}×${x.height}` : '—', 'dim'], [x.status + (x.frozen ? ' · frozen' : ''), x.video === 1 ? 'good' : 'bad']])));
+        $('others').replaceChildren(...others.map((x) => row([[x.id + 1, 'num'], [x.name, 'lbl'], [['Input', 'Background', 'Destination', 'Key'][x.type] ?? `Type ${x.type}`, 'dim'], ['', '']])));
+      }
+
+      function drawSetup() {
+        if (!$('address').matches('[editing]')) $('address').value = s.config.address;
+        if (!$('port').matches('[editing]')) $('port').value = String(s.config.port);
+        $('allow').checked = s.config.allowControls;
+        const ops = [[-1, 'None'], [0, 'Op 1'], [1, 'Op 2'], [2, 'Op 3']];
+        $('operator').replaceChildren(
+          ...ops.map(([v, t]) => {
+            const b = el('button', { 'aria-pressed': String(s.config.operatorId === v) }, t);
+            b.onclick = () => rcs.send({ type: 'config', config: { operatorId: v } });
+            return b;
+          })
+        );
+        $('pwNote').textContent = s.passwordSet ? 'A super-operator password is set (web view Setup).' : 'Super-operator password: set it in the web view Setup if the processor asks for one.';
+        const f = s.frame;
+        const power = f?.power?.length ? f.power.map((p) => `PSU ${p.supply}: ${['No supply', 'No power cable', 'No DC output', 'OK'][p.status] ?? p.status}`).join(', ') : '—';
+        const rows = [
+          ['Status', s.ready ? 'Connected' : s.statusText || s.connection],
+          ['Model', f?.model ?? '—'],
+          ['Name', f?.name || '—'],
+          ['Software', f?.version || '—'],
+          ['Power', power],
+          ['Presets', s.ready ? String(s.presets.length) : '—'],
+          ['Destinations', s.ready ? `${s.dests.filter((d) => d.kind === 'screen').length} screen, ${s.dests.filter((d) => d.kind === 'aux').length} aux` : '—']
+        ];
+        $('info').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
+      }
+
+      function draw() {
+        if (!s) return;
+        const live = s.ready;
+        const view = s.view;
+        const showOffline = !live && view !== 'setup';
+        $('offline').hidden = !showOffline;
+        if (showOffline) {
+          $('offlineText').textContent = s.config.address ? s.statusText || 'Connecting…' : 'No processor set. Type its IP address in Setup.';
+          $('toSetup').hidden = !!s.config.address;
+        }
+        for (const v of ['presets', 'outputs', 'sources', 'setup']) $('view-' + v).hidden = view !== v || (showOffline && v !== 'setup');
+        $('view-presets').style.display = view === 'presets' && !showOffline ? 'contents' : 'none';
+        $('status').setAttribute('connection', s.connection);
+        $('status').textContent = live ? 'Connected' : '';
+        $('device').textContent = live ? `${s.frame?.model ?? 'E2'} ${s.frame?.name ?? ''} · ${s.config.address}` : s.config.address;
+        $('pvwBus').hidden = $('pgmBus').hidden = !live;
+        $('pvwName').textContent = s.previewPreset?.name ?? '—';
+        $('pgmName').textContent = s.programPreset?.name ?? '—';
+        $('take').hidden = $('cut').hidden = !live;
+        $('take').disabled = $('cut').disabled = !s.config.allowControls || s.busy;
+        // Follow the Stream Deck: show the page with the preset just recalled.
+        const pvw = s.previewPreset?.preset ?? null;
+        if (pvw !== lastPvw && pvw !== null) {
+          const i = s.presets.findIndex((p) => p.id === pvw);
+          if (i >= 0) page = Math.floor(i / PER);
+        }
+        lastPvw = pvw;
+        if (!live && view !== 'setup') return;
+        if (view === 'presets') drawPresets();
+        if (view === 'outputs') drawOutputs();
+        if (view === 'sources') drawSources();
+        if (view === 'setup') drawSetup();
+      }
+
+      $('take').onclick = () => rcs.send({ type: 'take' });
+      $('cut').onclick = () => {
+        $('confirmText').textContent = 'Cut preview to program now, with no transition?';
+        $('confirm').show();
+      };
+      $('toSetup').onclick = () => rcs.send({ type: 'view', view: 'setup' });
+      $('reconnect').onclick = () => rcs.send({ type: 'reconnect' });
+      $('address').addEventListener('change', (e) => rcs.send({ type: 'config', config: { address: e.detail } }));
+      $('port').addEventListener('change', (e) => rcs.send({ type: 'config', config: { port: Number(e.detail) } }));
+      $('allow').addEventListener('change', (e) => rcs.send({ type: 'config', config: { allowControls: e.detail } }));
+
+      await rcs.ready();
+      rcs.on('message', (m) => {
+        if (m?.type !== 'snapshot') return;
+        s = m;
+        draw();
+      });
+      rcs.send({ type: 'hello' });
+    </script>
+  </body>
+</html>
