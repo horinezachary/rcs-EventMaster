@@ -109,9 +109,9 @@ describe('multi-frame systems', () => {
     expect(proc.statusText).toMatch(/3 frames$/);
     e2.frames[2]!.present = false;
     e2.frames[1]!.psu[0] = 2;
-    await until(() => proc!.warnings.length === 2);
+    // Warnings are set mid-read, the status at its end: wait for the status.
+    await until(() => /2 warnings$/.test(proc!.statusText));
     expect(proc.warnings).toEqual(['FRAME 3 is no longer in the system', 'FRAME 2: power supply 1 has no DC output']);
-    expect(proc.statusText).toMatch(/2 warnings$/);
     e2.frames[2]!.present = true;
     e2.frames[1]!.psu[0] = 3;
     await until(() => proc!.warnings.length === 0);
