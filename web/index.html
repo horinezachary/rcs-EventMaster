@@ -1,0 +1,322 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { --pvw: #1E9E4A; --pgm: #D7332D; }
+      body { padding: 24px; }
+      section { display: flex; flex-direction: column; gap: 16px; max-width: 1600px; }
+      header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+      .device { font: 14px var(--rcs-mono); color: var(--rcs-muted); }
+      .grow { flex: 1; }
+      p, .note { margin: 0; color: var(--rcs-muted); font-size: 15px; line-height: 1.5; }
+      .card { border: 1px solid var(--rcs-border); border-radius: 14px; background: var(--rcs-surface); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+      .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .good { color: var(--rcs-ok); } .bad { color: var(--rcs-error); } .dim { color: var(--rcs-muted); }
+      input[type=text], input[type=password], input[type=number] { min-height: 44px; border-radius: 10px; border: 1px solid var(--rcs-border); background: var(--rcs-bg); color: var(--rcs-text);
+        padding: 0 12px; font: 16px var(--rcs-font); min-width: 0; box-sizing: border-box; width: 100%; }
+      input:focus { outline: 2px solid var(--rcs-accent); border-color: transparent; }
+      label.f { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--rcs-muted); }
+      .toggle { display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--rcs-text); }
+      table { width: 100%; border-collapse: collapse; }
+      th { text-align: left; font-size: 13px; font-weight: 600; color: var(--rcs-muted); padding: 8px; border-bottom: 1px solid var(--rcs-border); white-space: nowrap; }
+      td { padding: 8px; border-bottom: 1px solid var(--rcs-border); font-size: 15px; }
+      td.mono { font-family: var(--rcs-mono); color: var(--rcs-muted); white-space: nowrap; }
+      .scrollx { overflow-x: auto; }
+
+      .buses { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+      .buses .bus { flex: 1 1 220px; }
+      .bus { padding: 10px 16px; border-radius: 12px; border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); min-width: 0; }
+      .bus .k { font: 700 12px var(--rcs-font); letter-spacing: 0.1em; color: var(--c); }
+      .bus .v { font: 700 20px var(--rcs-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .bus.pvw { --c: var(--pvw); } .bus.pgm { --c: var(--pgm); }
+      .acts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      .act { min-height: 56px; min-width: 120px; border-radius: 12px; border: 1px solid var(--rcs-border); font: 800 19px var(--rcs-font); letter-spacing: 0.06em; cursor: pointer;
+        background: var(--rcs-surface); color: var(--rcs-text); }
+      .act.take { background: var(--rcs-accent); color: #16181C; border-color: transparent; }
+      .act:disabled { opacity: 0.35; cursor: default; }
+
+      .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 10px; }
+      .preset { min-height: 92px; border-radius: 12px; border: 1px solid var(--rcs-border); background: var(--rcs-surface); color: var(--rcs-text); cursor: pointer; padding: 10px 12px;
+        display: flex; flex-direction: column; justify-content: space-between; gap: 6px; text-align: left; font: inherit; min-width: 0; }
+      .preset .n { font: 13px var(--rcs-mono); color: var(--rcs-muted); }
+      .preset .t { font: 700 17px var(--rcs-font); word-break: break-word; }
+      .preset .tag { font: 800 11px var(--rcs-font); letter-spacing: 0.1em; min-height: 14px; }
+      .preset.pvw { border: 2px solid var(--pvw); background: color-mix(in srgb, var(--pvw) 20%, var(--rcs-surface)); }
+      .preset.pvw .tag { color: var(--pvw); }
+      .preset.pgm { border: 2px solid var(--pgm); background: color-mix(in srgb, var(--pgm) 24%, var(--rcs-surface)); }
+      .preset.pgm .tag { color: var(--pgm); }
+      .preset:disabled { cursor: default; }
+
+      .dests { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 16px; }
+      .dest .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .dest .nm { font: 700 19px var(--rcs-font); }
+      .dest .sz { font: 13px var(--rcs-mono); color: var(--rcs-muted); }
+      .diff { font: 700 11px var(--rcs-font); letter-spacing: 0.08em; color: var(--pvw); }
+      .dest table td { padding: 6px 8px; }
+      .dest td.bus-k { font: 800 12px var(--rcs-font); letter-spacing: 0.08em; width: 44px; }
+      .dest tr.pgm td.bus-k { color: var(--pgm); } .dest tr.pvw td.bus-k { color: var(--pvw); }
+      .dest td.lyr { font: 13px var(--rcs-mono); color: var(--rcs-muted); width: 90px; white-space: nowrap; }
+      .dest td.src { font-weight: 600; }
+
+      .setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 24px; align-items: start; }
+      .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+      .seg button { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--rcs-border); background: var(--rcs-surface); color: var(--rcs-text); font: 600 15px var(--rcs-font); cursor: pointer; }
+      .seg button[aria-pressed=true] { border-color: var(--rcs-accent); color: var(--rcs-accent); }
+      dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 18px; font-size: 15px; }
+      dt { color: var(--rcs-muted); }
+      dd { margin: 0; font-family: var(--rcs-mono); overflow-wrap: anywhere; }
+      h2 { margin: 0; font-size: 17px; }
+    </style>
+  </head>
+  <body>
+    <!-- The web view's pages. Everything shown is read from the processor; commands go out only on a
+         button press here (CUT after a confirmation), with Allow controls on. -->
+    <header>
+      <span class="device" id="device"></span>
+      <rcs-status id="status" connection="disconnected"></rcs-status>
+    </header>
+
+    <div id="offline" class="card" style="margin-bottom: 16px" hidden><p id="offlineText"></p></div>
+
+    <div class="buses" id="buses" style="margin-bottom: 16px" hidden>
+      <div class="bus pvw"><div class="k">PREVIEW</div><div class="v" id="pvwName"></div></div>
+      <div class="bus pgm"><div class="k">PROGRAM</div><div class="v" id="pgmName"></div></div>
+      <div class="acts"><button class="act" id="cut">CUT</button><button class="act take" id="take">TAKE</button></div>
+    </div>
+
+    <section id="page-presets">
+      <p id="presetNote"></p>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <section id="page-outputs" hidden>
+      <p>What each destination shows, read from the processor every second. Layers top first; BG is the background.</p>
+      <div class="dests" id="dests"></div>
+    </section>
+
+    <section id="page-sources" hidden>
+      <div class="card scrollx">
+        <table><thead><tr><th>#</th><th>Name</th><th>Type</th><th>Format</th><th>Signal</th><th>On program</th></tr></thead><tbody id="sources"></tbody></table>
+      </div>
+    </section>
+
+    <section id="page-setup" hidden>
+      <div class="setup">
+        <div class="card">
+          <h2>Processor</h2>
+          <label class="f">Address<input type="text" id="address" placeholder="192.168.0.175" autocomplete="off" /></label>
+          <label class="f">JSON-RPC port<input type="number" id="port" min="1" max="65535" /></label>
+          <div class="row"><rcs-button id="saveAddr" variant="primary" size="small">Save</rcs-button><rcs-button id="reconnect" size="small">Reconnect</rcs-button></div>
+          <p>The module reads presets, sources and destinations over the Event Master JSON-RPC API (port 9999). It asks nothing that changes the show until you use a control.</p>
+        </div>
+        <div class="card">
+          <h2>Controls</h2>
+          <label class="toggle"><rcs-toggle id="allow" label="Allow controls"></rcs-toggle>Allow controls</label>
+          <p>Off: the module only reads. On: preset keys and buttons recall to preview, TAKE transitions every armed destination, CUT cuts.</p>
+          <h2>Operator</h2>
+          <div class="seg" id="operator"></div>
+          <p>In multi-operator mode, the operator this unit acts as. None when the processor does not use operators.</p>
+          <label class="f">Super-operator password<input type="password" id="password" autocomplete="new-password" /></label>
+          <div class="row"><rcs-button id="savePw" size="small" variant="primary">Save password</rcs-button><rcs-button id="clearPw" size="small" variant="danger">Remove</rcs-button><span class="note" id="pwState"></span></div>
+          <p>Sent with recalls, takes and cuts when set. Kept in named saves (sealed with a passphrase in a download), never shown again.</p>
+        </div>
+        <div class="card">
+          <h2>Processor info</h2>
+          <dl id="info"></dl>
+        </div>
+      </div>
+    </section>
+
+    <rcs-dialog id="confirm">
+      <span id="confirmText"></span>
+      <div slot="buttons">
+        <rcs-button id="no">Cancel</rcs-button>
+        <rcs-button id="yes" variant="danger">OK</rcs-button>
+      </div>
+    </rcs-dialog>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const PAGES = ['presets', 'outputs', 'sources', 'setup'];
+      let page = 'presets';
+      let s = null;
+      let onYes = null;
+
+      function el(tag, attrs = {}, text) {
+        const e = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) {
+          if (v === true) e.setAttribute(k, '');
+          else if (v !== false && v != null) e.setAttribute(k, String(v));
+        }
+        if (text != null) e.textContent = text;
+        return e;
+      }
+      const sno = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+      function ask(text, label, variant, fn) {
+        $('confirmText').textContent = text;
+        $('yes').textContent = label;
+        $('yes').setAttribute('variant', variant);
+        onYes = fn;
+        $('confirm').show();
+      }
+      $('no').onclick = () => $('confirm').close();
+      $('yes').onclick = () => {
+        $('confirm').close();
+        onYes?.();
+      };
+
+      function drawPresets() {
+        const pvw = s.previewPreset?.preset ?? null;
+        const pgm = s.programPreset?.preset ?? null;
+        $('presetNote').textContent = s.config.allowControls
+          ? 'Click a preset to recall it to preview, then TAKE. Green is on preview, red on program (as recalled from this unit; cleared when the content is changed elsewhere).'
+          : 'Controls are off, so presets only show. Turn on Allow controls in Setup to recall them.';
+        const tiles = s.presets.map((p) => {
+          const b = el('button', { class: p.id === pgm ? 'preset pgm' : p.id === pvw ? 'preset pvw' : 'preset', disabled: !s.config.allowControls || s.busy });
+          b.append(
+            el('span', { class: 'n' }, `${sno(p.number)}${p.locked ? ' · locked' : ''}`),
+            el('span', { class: 't' }, p.name),
+            el('span', { class: 'tag' }, p.id === pgm && p.id === pvw ? 'PGM · PVW' : p.id === pgm ? 'PROGRAM' : p.id === pvw ? 'PREVIEW' : '')
+          );
+          b.onclick = () => rcs.send({ type: 'recall', id: p.id });
+          return b;
+        });
+        $('presets').replaceChildren(...(tiles.length ? tiles : [el('p', {}, 'The processor has no presets.')]));
+      }
+
+      function rows(d, which) {
+        const list = d[which];
+        const k = which === 'program' ? 'PGM' : 'PVW';
+        const ordered = [...list.filter((l) => l.layer !== null).reverse(), ...list.filter((l) => l.layer === null)];
+        if (!ordered.length) ordered.push(null);
+        return ordered.map((l, i) => {
+          const tr = el('tr', { class: which === 'program' ? 'pgm' : 'pvw' });
+          tr.append(
+            el('td', { class: 'bus-k' }, i === 0 ? k : ''),
+            el('td', { class: 'lyr' }, l && d.kind !== 'aux' ? (l.layer === null ? 'BG' : l.layer) : ''),
+            el('td', { class: l ? 'src' : 'dim' }, l ? l.name + (l.frozen ? ' (frozen)' : '') : 'nothing')
+          );
+          return tr;
+        });
+      }
+
+      function drawOutputs() {
+        $('dests').replaceChildren(
+          ...s.dests.map((d) => {
+            const box = el('div', { class: 'card dest' });
+            const top = el('div', { class: 'top' });
+            const meta = d.kind === 'aux' ? 'AUX' : `${d.size}${d.transitionFrames != null ? ` · ${d.transitionFrames} frame transition` : ''}`;
+            top.append(el('span', { class: 'nm' }, d.name), el('span', { class: 'sz' }, meta));
+            if (d.programText !== d.previewText) top.append(el('span', { class: 'grow' }), el('span', { class: 'diff' }, 'PREVIEW DIFFERS'));
+            const t = el('table');
+            const tb = el('tbody');
+            tb.append(...rows(d, 'program'), ...rows(d, 'preview'));
+            t.append(tb);
+            box.append(top, t);
+            return box;
+          })
+        );
+        if (!s.dests.length) $('dests').replaceChildren(el('p', {}, 'The processor reports no destinations.'));
+      }
+
+      function drawSources() {
+        const onPgm = new Map();
+        for (const d of s.dests) for (const l of d.program) if (d.kind === 'aux' || l.layer !== null) onPgm.set(l.source, [...(onPgm.get(l.source) ?? []), d.name]);
+        $('sources').replaceChildren(
+          ...s.sources.map((x) => {
+            const tr = el('tr');
+            tr.append(
+              el('td', { class: 'mono' }, x.id + 1),
+              el('td', {}, x.name),
+              el('td', { class: 'dim' }, ['Input', 'Background', 'Destination', 'Key'][x.type] ?? `Type ${x.type}`),
+              el('td', { class: 'mono' }, x.width ? `${x.width}×${x.height}` : '—'),
+              el('td', { class: x.video === null ? 'dim' : x.video === 1 ? 'good' : 'bad' }, (x.status || '—') + (x.frozen ? ' · frozen' : '')),
+              el('td', {}, (onPgm.get(x.id) ?? []).join(', '))
+            );
+            return tr;
+          })
+        );
+      }
+
+      function drawSetup() {
+        if (document.activeElement !== $('address')) $('address').value = s.config.address;
+        if (document.activeElement !== $('port')) $('port').value = String(s.config.port);
+        $('allow').checked = s.config.allowControls;
+        $('operator').replaceChildren(
+          ...[[-1, 'None'], [0, 'Operator 1'], [1, 'Operator 2'], [2, 'Operator 3']].map(([v, t]) => {
+            const b = el('button', { 'aria-pressed': String(s.config.operatorId === v) }, t);
+            b.onclick = () => rcs.send({ type: 'config', config: { operatorId: v } });
+            return b;
+          })
+        );
+        $('pwState').textContent = s.passwordSet ? 'A password is set.' : 'No password set.';
+        $('clearPw').hidden = !s.passwordSet;
+        const f = s.frame;
+        const power = f?.power?.length ? f.power.map((p) => `PSU ${p.supply} ${['no supply', 'no power cable', 'no DC output', 'OK'][p.status] ?? p.status}`).join(', ') : '—';
+        const info = [
+          ['Status', s.ready ? 'Connected' : s.statusText || s.connection],
+          ['Model', f?.model ?? '—'],
+          ['Name', f?.name || '—'],
+          ['Software', f?.version || '—'],
+          ['IP (reported)', f?.ip || '—'],
+          ['Power', power],
+          ['Presets', s.ready ? String(s.presets.length) : '—'],
+          ['Sources', s.ready ? String(s.sources.length) : '—'],
+          ['Destinations', s.ready ? `${s.dests.filter((d) => d.kind === 'screen').length} screen, ${s.dests.filter((d) => d.kind === 'aux').length} aux` : '—']
+        ];
+        $('info').replaceChildren(...info.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
+      }
+
+      function draw() {
+        if (!s) return;
+        for (const id of PAGES) $('page-' + id).hidden = id !== page;
+        $('status').setAttribute('connection', s.connection);
+        $('status').textContent = s.ready ? 'Connected' : '';
+        $('device').textContent = s.ready ? `${s.frame?.model ?? 'Event Master'} ${s.frame?.name ?? ''} · ${s.config.address}` : s.config.address;
+        const showOffline = !s.ready && page !== 'setup';
+        $('offline').hidden = !showOffline;
+        $('offlineText').textContent = s.config.address ? s.statusText || 'Connecting…' : 'No processor set. Add its address on the Setup page.';
+        $('buses').hidden = !s.ready || page === 'setup' || page === 'sources';
+        $('pvwName').textContent = s.previewPreset?.name ?? '—';
+        $('pgmName').textContent = s.programPreset?.name ?? '—';
+        $('take').disabled = $('cut').disabled = !s.config.allowControls || s.busy;
+        if (showOffline) {
+          for (const id of PAGES) if (id !== 'setup') $('page-' + id).hidden = true;
+          return;
+        }
+        if (page === 'presets') drawPresets();
+        if (page === 'outputs') drawOutputs();
+        if (page === 'sources') drawSources();
+        if (page === 'setup') drawSetup();
+      }
+
+      function show(p) {
+        page = PAGES.includes(p) ? p : 'presets';
+        draw();
+      }
+
+      $('take').onclick = () => ask(`Take preview${s.previewPreset ? ` (${s.previewPreset.name})` : ''} to program? Every armed destination transitions.`, 'TAKE', 'primary', () => rcs.send({ type: 'take' }));
+      $('cut').onclick = () => ask('Cut preview to program now, with no transition?', 'CUT', 'danger', () => rcs.send({ type: 'cut' }));
+      $('saveAddr').onclick = () => rcs.send({ type: 'config', config: { address: $('address').value.trim(), port: Number($('port').value) } });
+      $('reconnect').onclick = () => rcs.send({ type: 'reconnect' });
+      $('allow').addEventListener('change', (e) => rcs.send({ type: 'config', config: { allowControls: e.detail } }));
+      $('savePw').onclick = () => {
+        if (!$('password').value) return;
+        rcs.send({ type: 'password', password: $('password').value });
+        $('password').value = '';
+      };
+      $('clearPw').onclick = () => ask('Remove the super-operator password?', 'Remove', 'danger', () => rcs.send({ type: 'password', password: '' }));
+
+      const info = await rcs.ready();
+      rcs.on('page', show);
+      rcs.on('message', (m) => {
+        if (m?.type !== 'snapshot') return;
+        s = m;
+        draw();
+      });
+      show(info.page);
+      rcs.send({ type: 'hello' });
+    </script>
+  </body>
+</html>

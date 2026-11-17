@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "address": { "type": "string", "maxLength": 253 },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "operatorId": { "type": "integer", "minimum": -1, "maximum": 2 },
+    "allowControls": { "type": "boolean" }
+  },
+  "required": ["address", "port", "operatorId", "allowControls"],
+  "additionalProperties": false
+}
