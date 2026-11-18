@@ -174,7 +174,19 @@
     <script type="module">
       const { drawCanvas } = window.E2Canvas;
       const $ = (id) => document.getElementById(id);
-      const PER = 20;
+      // Two rows of 10 presets on the 1920×440 bar; five rows on a taller screen (fullPanel, 1824×1080).
+      let PER = 20;
+      const fitRows = () => {
+        const rows = window.innerHeight >= 700 ? 5 : 2;
+        PER = 10 * rows;
+        $('presets').style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+      };
+      fitRows();
+      window.addEventListener('resize', () => {
+        const before = PER;
+        fitRows();
+        if (before !== PER && s) draw();
+      });
       let s = null;
       let page = 0;
       let lastPvw = null;
