@@ -130,6 +130,13 @@ It needs two Actions secrets:
 - `RCS_SOURCE_TOKEN`: a fine-grained token with Contents read-only on `rack-control-surface`, so the
   workflows can link the SDK from it. CI uses the tag in `package.json` `rcs.sdkRef`.
 
+## Icon and colour
+
+`assets/icon.svg` is a one-colour redraw of the Event Master software icon ("em" with two gears), from the
+icon Zac supplied. The accent colour (`theme` in `module.json`) is the icon's red. Barco and Event Master are
+trademarks of Barco NV. The icon is used only to show which equipment this module works with. This module is not
+made or endorsed by Barco.
+
 ## Layout
 
 | Path | What |
