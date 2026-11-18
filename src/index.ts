@@ -13,6 +13,9 @@
 //   key 11      next page of presets (with more than 10)
 //   key 12      what is on preview          key 13  what is on program
 //   key 14      CUT (hold)                  key 15  TAKE
+//
+// On a larger deck (controller 0.21.0+) presets fill every row but the bottom one, and the bottom row
+// keeps the page key first and PREVIEW, PROGRAM, CUT and TAKE last, with more presets in between.
 
 import { defineModule, type Ctx, type KeySetParams } from '@rcs/module-sdk';
 import { DEFAULT_PORT, VIDEO_STATUS, type Dest, type LayerUse } from './e2.js';
@@ -36,6 +39,36 @@ const VIEWS: View[] = ['presets', 'screens', 'outputs', 'sources', 'setup'];
 
 export const KEY = { PAGE: 10, PVW: 11, PGM: 12, CUT: 13, TAKE: 14 } as const;
 export const PER_PAGE = 10;
+
+export interface Grid {
+  columns: number;
+  rows: number;
+}
+
+/** The deck as the controller describes it. Older controllers send no size: 5 × 3. */
+export function grid(ctx: { host: { deck: { columns?: number; rows?: number } } }): Grid {
+  return { columns: ctx.host.deck.columns ?? 5, rows: ctx.host.deck.rows ?? 3 };
+}
+
+export interface Layout {
+  keys: number;
+  /** Preset keys, in order. */
+  presets: number[];
+  page: number;
+  pvw: number;
+  pgm: number;
+  cut: number;
+  take: number;
+}
+
+/** Where everything goes on a deck of this size. On 5 × 3 it is KEY and PER_PAGE. */
+export function layout(g: Grid): Layout {
+  const keys = g.columns * g.rows;
+  const bottom = (g.rows - 1) * g.columns;
+  const presets = Array.from({ length: bottom }, (_, i) => i);
+  for (let k = bottom + 1; k < keys - 4; k++) presets.push(k);
+  return { keys, presets, page: bottom, pvw: keys - 4, pgm: keys - 3, cut: keys - 2, take: keys - 1 };
+}
 const HOLD_MS = 700;
 
 // Key colours: keys have no CSS. Tally colours as on the E2 controller: green preview, red program.
@@ -90,8 +123,12 @@ function short(s: string | undefined, n: number): string {
   return chars.length > n ? chars.slice(0, n).join('') : chars.join('');
 }
 
-function pages(): number {
-  return Math.max(1, Math.ceil((proc()?.presets.length ?? 0) / PER_PAGE));
+function perPage(ctx: C): number {
+  return layout(grid(ctx)).presets.length;
+}
+
+function pages(ctx: C): number {
+  return Math.max(1, Math.ceil((proc()?.presets.length ?? 0) / perPage(ctx)));
 }
 
 function sourceName(id: number): string {
@@ -148,7 +185,7 @@ function connect(ctx: C, force = false): void {
 }
 
 async function clampPage(ctx: C): Promise<void> {
-  if (ctx.state.value.presetPage >= pages()) await ctx.state.patch({ presetPage: 0 });
+  if (ctx.state.value.presetPage >= pages(ctx)) await ctx.state.patch({ presetPage: 0 });
 }
 
 // ---- drawing -----------------------------------------------------------------------------------
@@ -187,7 +224,7 @@ export function snapshot(ctx: C) {
     config: c,
     passwordSet: password(ctx) !== '',
     presetPage: ctx.state.value.presetPage,
-    perPage: PER_PAGE,
+    perPage: perPage(ctx),
     view: rt?.view ?? 'presets'
   };
 }
@@ -208,14 +245,15 @@ function rawKeyFaces(ctx: C): KeySetParams[] {
   const p = proc();
   const live = ready() && !!p;
   const c = cfg(ctx);
+  const L = layout(grid(ctx));
   const faces: KeySetParams[] = [];
   const page = ctx.state.value.presetPage;
   const presets = p?.presets ?? [];
   const pvw = p?.previewPreset?.preset ?? null;
   const pgm = p?.programPreset?.preset ?? null;
 
-  for (let k = 0; k < PER_PAGE; k++) {
-    const preset = presets[page * PER_PAGE + k];
+  for (const [i, k] of L.presets.entries()) {
+    const preset = presets[page * L.presets.length + i];
     if (!live || !preset) {
       faces.push({ index: k });
       continue;
@@ -231,20 +269,20 @@ function rawKeyFaces(ctx: C): KeySetParams[] {
     });
   }
 
-  if (live && pages() > 1) faces.push({ index: KEY.PAGE, label: 'MORE ▶', sublabel: `page ${page + 1}/${pages()}` });
-  else faces.push({ index: KEY.PAGE });
+  if (live && pages(ctx) > 1) faces.push({ index: L.page, label: 'MORE ▶', sublabel: `page ${page + 1}/${pages(ctx)}` });
+  else faces.push({ index: L.page });
 
   if (!live) {
-    faces.push({ index: KEY.PVW }, { index: KEY.PGM, label: 'OFFLINE', sublabel: short(c.address || 'no address', 12), background: DANGER }, { index: KEY.CUT }, { index: KEY.TAKE });
+    faces.push({ index: L.pvw }, { index: L.pgm, label: 'OFFLINE', sublabel: short(c.address || 'no address', 12), background: DANGER }, { index: L.cut }, { index: L.take });
     return faces;
   }
-  faces.push({ index: KEY.PVW, label: 'PREVIEW', sublabel: short(p!.previewPreset?.name ?? '—', 12), background: PVW_BG });
-  faces.push({ index: KEY.PGM, label: 'PROGRAM', sublabel: short(p!.programPreset?.name ?? '—', 12), background: PGM_BG });
+  faces.push({ index: L.pvw, label: 'PREVIEW', sublabel: short(p!.previewPreset?.name ?? '—', 12), background: PVW_BG });
+  faces.push({ index: L.pgm, label: 'PROGRAM', sublabel: short(p!.programPreset?.name ?? '—', 12), background: PGM_BG });
   if (!c.allowControls) {
-    faces.push({ index: KEY.CUT, label: 'CUT', sublabel: 'controls off', background: DIM_BG }, { index: KEY.TAKE, label: 'TAKE', sublabel: 'controls off', background: DIM_BG });
+    faces.push({ index: L.cut, label: 'CUT', sublabel: 'controls off', background: DIM_BG }, { index: L.take, label: 'TAKE', sublabel: 'controls off', background: DIM_BG });
   } else {
-    faces.push({ index: KEY.CUT, label: 'CUT', sublabel: 'hold', background: DIM_BG });
-    faces.push(p!.busy ? { index: KEY.TAKE, label: 'TAKE', sublabel: 'sending…', background: DIM_BG } : { index: KEY.TAKE, label: 'TAKE', sublabel: short(p!.previewPreset?.name ?? 'preview', 12), background: TAKE_BG, color: ON_ACCENT });
+    faces.push({ index: L.cut, label: 'CUT', sublabel: 'hold', background: DIM_BG });
+    faces.push(p!.busy ? { index: L.take, label: 'TAKE', sublabel: 'sending…', background: DIM_BG } : { index: L.take, label: 'TAKE', sublabel: short(p!.previewPreset?.name ?? 'preview', 12), background: TAKE_BG, color: ON_ACCENT });
   }
   return faces;
 }
@@ -346,6 +384,15 @@ function highlight(ctx: C, view: View): void {
 
 export default defineModule<State, Config>({
   holdMs: HOLD_MS,
+  // Every key of a larger deck: more presets per page. Older controllers ignore this and send 15 keys.
+  fullDeck: true,
+
+  // The deck changed size: presets per page changed, so the page may be past the end now.
+  async deck(ctx) {
+    await clampPage(ctx);
+    await ctx.keys.clear();
+    await draw(ctx);
+  },
 
   async start(ctx) {
     rt?.proc?.stop();
@@ -371,17 +418,19 @@ export default defineModule<State, Config>({
   async key(ctx, { index, action }) {
     if (action !== 'down' || !rt) return;
     const p = proc();
-    if (index < PER_PAGE) {
-      const preset = p?.presets[ctx.state.value.presetPage * PER_PAGE + index];
+    const L = layout(grid(ctx));
+    const slot = L.presets.indexOf(index);
+    if (slot >= 0) {
+      const preset = p?.presets[ctx.state.value.presetPage * L.presets.length + slot];
       if (preset) await recall(ctx, preset.id);
       return;
     }
-    if (index === KEY.PAGE && pages() > 1) {
-      await ctx.state.patch({ presetPage: (ctx.state.value.presetPage + 1) % pages() });
+    if (index === L.page && pages(ctx) > 1) {
+      await ctx.state.patch({ presetPage: (ctx.state.value.presetPage + 1) % pages(ctx) });
       return draw(ctx);
     }
-    if (index === KEY.TAKE) return take(ctx, false);
-    if (index === KEY.PVW || index === KEY.PGM) {
+    if (index === L.take) return take(ctx, false);
+    if (index === L.pvw || index === L.pgm) {
       rt.view = 'outputs';
       highlight(ctx, 'outputs');
       return draw(ctx);
@@ -389,7 +438,7 @@ export default defineModule<State, Config>({
   },
 
   async hold(ctx, index) {
-    if (index === KEY.CUT) await take(ctx, true);
+    if (index === layout(grid(ctx)).cut) await take(ctx, true);
   },
 
   async strip(ctx, id) {
@@ -415,7 +464,7 @@ export default defineModule<State, Config>({
         return take(ctx, true);
       case 'page': {
         const page = Number(m.page);
-        if (Number.isInteger(page) && page >= 0 && page < pages()) await ctx.state.patch({ presetPage: page });
+        if (Number.isInteger(page) && page >= 0 && page < pages(ctx)) await ctx.state.patch({ presetPage: page });
         return draw(ctx);
       }
       case 'view':

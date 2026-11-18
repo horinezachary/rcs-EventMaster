@@ -48,6 +48,11 @@ simulator.
 | 14 | CUT: hold for 0.7 s |
 | 15 | TAKE: transition every armed destination with its own transition time |
 
+On a larger deck (an XL, 8×4, or a Stream Deck + XL, 9×4) presets fill every row but the bottom one and the
+middle of the bottom row; the bottom row starts with the page key and ends with preview, program, CUT and
+TAKE. An XL shows 27 presets a page. This needs controller 0.21.0 or later; older controllers show the
+15-key layout.
+
 ## Which preset is on preview and program
 
 The Event Master API has no way to ask which preset is on preview or program. The module remembers the
