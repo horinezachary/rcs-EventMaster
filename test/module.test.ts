@@ -27,14 +27,15 @@ async function until(check: () => boolean, ms = 4000): Promise<void> {
 }
 const last = () => (sim ? [...sim.uiMessages].reverse().find((m) => m.message?.type === 'snapshot')?.message : null);
 
-async function start(extra: { config?: Partial<Config>; state?: State; reason?: 'boot' | 'restore' | 'user'; secrets?: Record<string, unknown> } = {}) {
+async function start(extra: { config?: Partial<Config>; state?: State; reason?: 'boot' | 'restore' | 'user'; secrets?: Record<string, unknown>; deck?: { columns: number; rows: number } } = {}) {
   e2 = new SimE2();
   const port = await e2.listen(0);
   sim = await startTestModule(mod, {
     config: { address: '127.0.0.1', port, operatorId: -1, allowControls: true, ...extra.config },
     state: extra.state,
     reason: extra.reason,
-    secrets: extra.secrets
+    secrets: extra.secrets,
+    deck: extra.deck
   });
   await until(() => sim!.status?.connection === 'connected' && last()?.ready);
   await sim.settle();
@@ -156,5 +157,29 @@ describe('module', () => {
     await until(() => sim!.keys[KEY.PGM]?.label === 'OFFLINE', 8000);
     await sim!.press(0);
     expect(e2!.commands).toEqual([]);
+  });
+});
+
+describe('a larger Stream Deck', () => {
+  it('shows more presets on an XL, keeps TAKE on the last key, and goes back to pages on 15 keys', async () => {
+    await start({ deck: { columns: 8, rows: 4 } });
+    expect(sim!.keys).toHaveLength(32);
+    expect(sim!.keys[0]).toMatchObject({ label: 'WALK IN' });
+    expect(sim!.keys[10]).toMatchObject({ label: 'SPONSORS' }); // page 2 on a 15-key deck
+    expect(sim!.keys[24]).toEqual({}); // one page: no page key
+    expect(sim!.keys[28]).toMatchObject({ label: 'PREVIEW' });
+    expect(sim!.keys[29]).toMatchObject({ label: 'PROGRAM' });
+    expect(sim!.keys[30]).toMatchObject({ label: 'CUT' });
+    expect(sim!.keys[31]).toMatchObject({ label: 'TAKE' });
+    await sim!.press(10);
+    expect(e2!.commands.at(-1)).toMatchObject({ method: 'activatePreset' });
+    await sim!.press(30, { holdMs: 800 });
+    expect(e2!.commands.at(-1)!.method).toBe('cut');
+
+    await sim!.setDeck(5, 3);
+    await sim!.settle();
+    expect(sim!.keys).toHaveLength(15);
+    expect(sim!.keys[KEY.PAGE]).toMatchObject({ label: 'MORE ▶', sublabel: 'page 1/2' });
+    expect(sim!.keys[KEY.TAKE]).toMatchObject({ label: 'TAKE' });
   });
 });
