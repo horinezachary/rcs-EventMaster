@@ -96,6 +96,24 @@
       .warns { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
       .warns li { color: var(--rcs-warn); font-size: 14px; }
       .warns li::before { content: '⚠ '; }
+      /* A taller screen (fullPanel, 1824×1080). The 440 px bar never matches this. Presets size the grid to the
+         presets on the page and put every screen's preview and program under it; Screens shows every screen
+         destination at once, arranged so the canvases come out largest. */
+      .board { display: none; }
+      @media (min-height: 700px) {
+        .presets.tall { flex: none; grid-template-rows: repeat(var(--rows, 2), 96px); }
+        .board { display: flex; flex: 1; min-height: 0; flex-direction: column; justify-content: center; gap: 16px; }
+        .bline { display: flex; justify-content: center; gap: 16px; }
+        .bcol { display: flex; flex-direction: column; gap: 10px; }
+        .bcell { display: flex; flex-direction: column; gap: 4px; }
+        .bcell .k { font: 800 12px var(--rcs-font); letter-spacing: 0.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 16px; }
+        .bcell .k .nm { color: var(--rcs-text); margin-right: 8px; font-size: 13px; letter-spacing: 0.04em; }
+        .bcell .k .sz { font: 12px var(--rcs-mono); color: var(--rcs-muted); letter-spacing: 0; margin-left: 8px; }
+        .bcell.pvw .k { color: var(--pvw); } .bcell.pgm .k { color: var(--pgm); }
+        .bcell svg.canvas { display: block; border-radius: 6px; }
+        .bcell.pvw svg.canvas .edge { stroke: var(--pvw); } .bcell.pgm svg.canvas .edge { stroke: var(--pgm); }
+        #view-screens.all .stabs, #view-screens.all .pair { display: none; }
+      }
     </style>
   </head>
   <body>
@@ -120,6 +138,7 @@
       <section id="view-presets" style="display: contents">
         <div class="bar"><span class="cap">PRESETS</span><span class="note" id="presetNote"></span><div class="grow"></div><div class="pager" id="pager"></div></div>
         <div class="presets" id="presets"></div>
+        <div class="board" id="presetBoard"></div>
       </section>
 
       <section id="view-screens" hidden>
@@ -128,6 +147,7 @@
           <div class="bus-canvas pvw"><span class="k">PREVIEW</span><div class="frame" id="cvPvw"></div></div>
           <div class="bus-canvas pgm"><span class="k">PROGRAM</span><div class="frame" id="cvPgm"></div></div>
         </div>
+        <div class="board" id="screenBoard"></div>
       </section>
 
       <section id="view-outputs" class="scroll" hidden>
@@ -174,19 +194,19 @@
     <script type="module">
       const { drawCanvas } = window.E2Canvas;
       const $ = (id) => document.getElementById(id);
-      // Two rows of 10 presets on the 1920×440 bar; five rows on a taller screen (fullPanel, 1824×1080).
+      // Two rows of 10 presets on the 1920×440 bar. On a taller screen (fullPanel, 1824×1080) up to five rows,
+      // only as many as the presets need, with the screens' preview and program canvases under them.
+      const isTall = () => window.innerHeight >= 700;
       let PER = 20;
       const fitRows = () => {
-        const rows = window.innerHeight >= 700 ? 5 : 2;
+        const tall = isTall();
+        const rows = tall ? Math.min(5, Math.max(1, Math.ceil((s?.presets.length ?? 50) / 10))) : 2;
         PER = 10 * rows;
-        $('presets').style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+        $('presets').classList.toggle('tall', tall);
+        $('presets').style.gridTemplateRows = tall ? '' : `repeat(${rows}, minmax(0, 1fr))`;
+        $('presets').style.setProperty('--rows', String(rows));
       };
-      fitRows();
-      window.addEventListener('resize', () => {
-        const before = PER;
-        fitRows();
-        if (before !== PER && s) draw();
-      });
+      window.addEventListener('resize', () => s && draw());
       let s = null;
       let page = 0;
       let lastPvw = null;
@@ -209,6 +229,7 @@
       };
 
       function drawPresets() {
+        fitRows();
         const list = s.presets;
         const pages = Math.max(1, Math.ceil(list.length / PER));
         page = Math.min(page, pages - 1);
@@ -237,6 +258,86 @@
           next.onclick = () => ((page += 1), drawPresets());
           box.append(prev, el('span', {}, `${page * PER + 1}–${Math.min(list.length, (page + 1) * PER)} of ${list.length}`), next);
         }
+        // Recall a preset and see it land on preview, on the same screen.
+        if (isTall()) drawBoard($('presetBoard'), s.dests.filter((d) => d.kind === 'screen'));
+      }
+
+      // Lays every screen's preview and program out in the box so the canvases come out largest. Screens go in
+      // order onto lines; on a line each screen is either preview beside program, or preview above program.
+      // Every way of splitting the screens into lines and every choice per line is tried (screens are few); the
+      // winner makes its smallest canvas largest.
+      const CAP = 20; // caption above each canvas
+      const GAP = 16;
+      function plan(screens, W, H) {
+        const asp = screens.map((d) => Math.max(1, d.width || 1920) / Math.max(1, d.height || 1080));
+        const n = screens.length;
+        let best = null;
+        const lineOf = (from, to, stacked) => {
+          const a = asp.slice(from, to);
+          const k = a.length;
+          const sum = a.reduce((x, y) => x + y, 0);
+          // Side by side: one row of 2k canvases sharing a height. Stacked: k columns, preview above program.
+          const h = stacked ? (W - GAP * (k - 1)) / sum : (W - GAP * (2 * k - 1)) / (2 * sum);
+          const fixed = stacked ? 2 * CAP + 10 : CAP;
+          return { from, to, stacked, a, h, fixed, need: (stacked ? 2 * h : h) + fixed };
+        };
+        const tryLines = (lines) => {
+          const gaps = GAP * (lines.length - 1);
+          const need = lines.reduce((x, l) => x + l.need, 0);
+          const fixed = lines.reduce((x, l) => x + l.fixed, 0);
+          // Lines too tall together are scaled down alike (only the canvases shrink, not the captions).
+          const f = Math.min(1, Math.max(0, H - gaps - fixed) / Math.max(1, need - fixed));
+          let area = 0;
+          let low = Infinity;
+          const out = lines.map((l) => {
+            const cell = l.h * f;
+            area += 2 * l.a.reduce((x, y) => x + y * cell * cell, 0);
+            low = Math.min(low, cell);
+            return { ...l, cell };
+          });
+          // The smallest picture as large as possible first, so no screen ends up a thin band; then the most area.
+          if (!best || low > best.low + 4 || (low > best.low - 4 && area > best.area)) best = { area, low, lines: out };
+        };
+        const walk = (from, acc) => {
+          if (from === n) return tryLines(acc);
+          for (let to = from + 1; to <= n; to++) for (const stacked of [false, true]) walk(to, [...acc, lineOf(from, to, stacked)]);
+        };
+        if (n <= 6) walk(0, []);
+        else tryLines(screens.map((_, i) => lineOf(i, i + 1, false)));
+        return best;
+      }
+
+      function boardCell(d, which, w, h) {
+        const c = el('div', { class: 'bcell ' + (which === 'preview' ? 'pvw' : 'pgm') });
+        const k = el('span', { class: 'k' });
+        k.append(el('span', { class: 'nm' }, d.name), which === 'preview' ? 'PREVIEW' : 'PROGRAM');
+        if (which === 'preview') k.append(el('span', { class: 'sz' }, d.size));
+        k.style.width = Math.floor(w) + 'px';
+        const svg = drawCanvas(d, which);
+        svg.setAttribute('width', String(Math.floor(w)));
+        svg.setAttribute('height', String(Math.floor(h)));
+        c.append(k, svg);
+        return c;
+      }
+
+      function drawBoard(box, screens) {
+        if (!screens.length) return box.replaceChildren(el('p', { class: 'note' }, 'The processor reports no screen destinations.'));
+        box.replaceChildren();
+        const p = plan(screens, box.clientWidth || 1760, box.clientHeight || 600);
+        box.replaceChildren(
+          ...p.lines.map((l) => {
+            const line = el('div', { class: 'bline' });
+            screens.slice(l.from, l.to).forEach((d, i) => {
+              const w = l.a[i] * l.cell;
+              if (l.stacked) {
+                const col = el('div', { class: 'bcol' });
+                col.append(boardCell(d, 'preview', w, l.cell), boardCell(d, 'program', w, l.cell));
+                line.append(col);
+              } else line.append(boardCell(d, 'preview', w, l.cell), boardCell(d, 'program', w, l.cell));
+            });
+            return line;
+          })
+        );
       }
 
       function chips(list, aux) {
@@ -256,6 +357,10 @@
       let screenId = null;
       function drawScreens() {
         const screens = s.dests.filter((d) => d.kind === 'screen');
+        // A tall screen shows every destination at once, so no destination buttons.
+        $('view-screens').classList.toggle('all', isTall());
+        if (isTall()) return drawBoard($('screenBoard'), screens);
+        $('screenBoard').replaceChildren();
         if (!screens.some((d) => d.id === screenId)) screenId = screens[0]?.id ?? null;
         $('stabs').replaceChildren(
           ...screens.map((d) => {
@@ -347,6 +452,7 @@
 
       function draw() {
         if (!s) return;
+        fitRows();
         const live = s.ready;
         const view = s.view;
         const showOffline = !live && view !== 'setup';
