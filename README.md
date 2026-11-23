@@ -18,6 +18,12 @@ and aux destination shows, layer by layer.
 - **Setup**: the processor address, Allow controls, the operator (multi-operator mode), and every frame
   of the system with its software, address, power supplies and cards.
 
+On a taller touchscreen (1920×1080) Presets uses only as many rows as the presets need (up to five) and
+draws every screen's preview and program under them, so a recalled preset can be seen landing on preview.
+Screens shows every screen destination at once instead of one behind buttons. Both arrange the canvases
+so the smallest comes out as large as it can (wide walls preview beside program, smaller screens side by
+side or stacked, whichever fits best). Paging and the keys are as before. The 1920×440 bar is unchanged.
+
 The web view has the same pages. TAKE and CUT ask for a confirmation there; the super-operator password
 is set on its Setup page.
 
